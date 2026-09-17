@@ -267,17 +267,26 @@ def _copy_exif(src, dst, job_id):
         return None
 
 
-def _make_download_name(source_path, datetime_str):
+OUTPUT_FORMATS = {"tif": ".tif", "jpg": ".jpg", "png": ".png"}
+
+
+def _clean_download_name(name, ext):
+    """Sanitise a user-supplied filename and force the right extension."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", (name or "").strip())[:80] or "stitch"
+    return os.path.splitext(safe)[0] + ext
+
+
+def _make_download_name(source_path, datetime_str, ext):
     """A meaningful name for the final file: capture time if we have it,
     otherwise the first frame's name."""
     if datetime_str:
         m = re.match(r"(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})", datetime_str)
         if m:
             return (f"{m.group(1)}{m.group(2)}{m.group(3)}_"
-                    f"{m.group(4)}{m.group(5)}{m.group(6)}_pano.tif")
+                    f"{m.group(4)}{m.group(5)}{m.group(6)}_pano{ext}")
     stem = os.path.splitext(os.path.basename(source_path or "stitch"))[0]
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", stem)[:60] or "stitch"
-    return f"{safe}_pano.tif"
+    return f"{safe}_pano{ext}"
 
 
 def _run_job(job_id, image_paths):
@@ -331,9 +340,15 @@ def _run_job(job_id, image_paths):
         _set_job(job_id, last_proj_code=proj_code,
                  message=f"Output projection: {proj_name}"
                          + (f" (coverage ~{hfov:.0f}\u00b0)" if hfov else ""))
-        ok, msg = _run_tool(job_id, 4, ["pano_modify", f"--projection={proj_code}",
-                                        "--fov=AUTO", "--crop=AUTO", "--canvas=AUTO", "-o",
-                                        os.path.join(job_dir, "pp.pto"), opt_pto])
+        fmt = (job.get("format") or "tif").lower()
+        ext = OUTPUT_FORMATS.get(fmt, ".tif")
+        modify_args = ["pano_modify", f"--projection={proj_code}",
+                       "--fov=AUTO", "--crop=AUTO", "--canvas=AUTO",
+                       f"--ldr-file={fmt.upper()}"]
+        if fmt == "jpg":
+            modify_args.append(f"--ldr-compression={int(job.get('quality') or 90)}")
+        modify_args += ["-o", os.path.join(job_dir, "pp.pto"), opt_pto]
+        ok, msg = _run_tool(job_id, 4, modify_args)
         if not ok:
             raise RuntimeError(msg)
         ok, msg = _run_tool(job_id, 5, ["hugin_executor",
@@ -355,7 +370,12 @@ def _run_job(job_id, image_paths):
 
     preview = _make_preview(output, job_dir)
     dt = _copy_exif(image_paths[0], output, job_id)
-    download_name = _make_download_name(image_paths[0], dt)
+    fmt = (job.get("format") or "tif").lower()
+    ext = OUTPUT_FORMATS.get(fmt, ".tif")
+    if job.get("filename"):
+        download_name = _clean_download_name(job["filename"], ext)
+    else:
+        download_name = _make_download_name(image_paths[0], dt, ext)
     with JOBS_LOCK:
         job = JOBS.get(job_id)
         if job is None:
@@ -485,8 +505,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/download/"):
                 target = job.get("download")
-                content_type = "image/tiff"
-                name = job.get("download_name", "stitched.tif")
+                ext = os.path.splitext(target or "")[1].lower()
+                content_type = {"": "image/tiff", ".png": "image/png"}.get(
+                    ext, "image/jpeg" if ext in (".jpg", ".jpeg") else "image/tiff")
+                name = job.get("download_name", "stitched" + (ext or ".tif"))
             else:
                 target = job.get("preview")
                 content_type = "image/png"
@@ -555,6 +577,15 @@ class Handler(BaseHTTPRequestHandler):
             if projection not in PROJECTIONS:
                 projection = "auto"
 
+            fmt = (fields.get("format") or "tif").strip().lower()
+            if fmt not in OUTPUT_FORMATS:
+                fmt = "tif"
+            try:
+                quality = min(100, max(1, int(float(fields.get("quality") or 90))))
+            except ValueError:
+                quality = 90
+            filename = (fields.get("filename") or "").strip()[:100]
+
             job_id = uuid.uuid4().hex
             job_dir = tempfile.mkdtemp(prefix="hugin_")
             image_paths = []
@@ -587,6 +618,9 @@ class Handler(BaseHTTPRequestHandler):
                     "message": "Starting...",
                     "dir": job_dir,
                     "projection": projection,
+                    "format": fmt,
+                    "quality": quality,
+                    "filename": filename,
                 }
 
             t = threading.Thread(target=_run_job, args=(job_id, image_paths), daemon=True)

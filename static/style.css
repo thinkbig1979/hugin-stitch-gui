@@ -144,6 +144,24 @@ section { margin-top: 32px; }
 
 .actions { margin-top: 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
+.options {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px 24px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.opt { display: flex; flex-direction: column; gap: 5px; }
+.opt-label { color: var(--muted); font-size: .82rem; }
+.hint-inline { color: var(--muted); opacity: .7; font-size: .78rem; }
+#quality { width: 180px; accent-color: var(--accent); }
+#output-name { width: 220px; cursor: text; }
+#output-name::placeholder { color: var(--muted); opacity: .7; }
+
 .proj-label { color: var(--muted); font-size: .88rem; }
 .proj-select {
   font: inherit;

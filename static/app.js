@@ -9,6 +9,11 @@ const clearBtn = document.getElementById("clear-btn");
 const stitchBtn = document.getElementById("stitch-btn");
 const projectionSelect = document.getElementById("projection");
 const projHint = document.getElementById("proj-hint");
+const formatSelect = document.getElementById("format");
+const qualityWrap = document.getElementById("quality-wrap");
+const qualityInput = document.getElementById("quality");
+const qualityValue = document.getElementById("quality-value");
+const outputNameInput = document.getElementById("output-name");
 const progressWrap = document.getElementById("progress-wrap");
 const progressFill = document.getElementById("progress-fill");
 const progressMsg = document.getElementById("progress-msg");
@@ -25,6 +30,16 @@ const PROJ_HINTS = {
   cylindrical: "Good for wide panoramas (100\u2013240\u00b0): verticals stay straight near the center, no edge stretch.",
   equirectangular: "Spherical mapping; only recommended near 360\u00b0.",
 };
+
+const FORMAT_LABELS = { tif: "TIFF", jpg: "JPEG", png: "PNG", jpeg: "JPEG" };
+
+function updateFormatControls() {
+  qualityWrap.classList.toggle("hidden", formatSelect.value !== "jpg");
+}
+
+function updateDownloadLabel() {
+  downloadLink.textContent = `Download\u00a0${FORMAT_LABELS[formatSelect.value] || "TIFF"}`;
+}
 
 function show(el) { el.classList.remove("hidden"); }
 function hide(el) { el.classList.add("hidden"); }
@@ -149,6 +164,11 @@ stitchBtn.addEventListener("click", async () => {
   const form = new FormData();
   for (const entry of files) form.append("files", entry.file);
   form.append("projection", projectionSelect.value);
+  form.append("format", formatSelect.value);
+  if (formatSelect.value === "jpg") {
+    form.append("quality", String(qualityInput.value));
+  }
+  form.append("filename", outputNameInput.value.trim());
 
   let jobId;
   try {
@@ -191,6 +211,7 @@ function showResult(previewUrl, downloadUrl) {
   hide(progressWrap);
   resultImg.src = previewUrl;
   downloadLink.href = downloadUrl;
+  updateDownloadLabel();
   show(resultWrap);
   resultWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
   stitching = false;
@@ -212,3 +233,9 @@ function updateProjHint() {
 }
 projectionSelect.addEventListener("change", updateProjHint);
 updateProjHint();
+
+formatSelect.addEventListener("change", updateFormatControls);
+qualityInput.addEventListener("input", () => {
+  qualityValue.textContent = qualityInput.value;
+});
+updateFormatControls();

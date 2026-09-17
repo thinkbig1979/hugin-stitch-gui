@@ -33,6 +33,25 @@
       </div>
       <p class="hint">Drag thumbnails to reorder · notch a thumbnail to remove it</p>
       <ul id="thumb-list"></ul>
+      <div class="options">
+        <label class="opt" for="format">
+          <span class="opt-label">Output format</span>
+          <select id="format" class="proj-select">
+            <option value="tif" selected>TIFF (lossless)</option>
+            <option value="jpg">JPEG</option>
+            <option value="png">PNG (lossless)</option>
+          </select>
+        </label>
+        <label class="opt hidden" id="quality-wrap" for="quality">
+          <span class="opt-label">JPEG quality <span id="quality-value">90</span></span>
+          <input type="range" id="quality" min="1" max="100" value="90" step="1">
+        </label>
+        <label class="opt" for="output-name">
+          <span class="opt-label">Output filename <span class="hint-inline">optional</span></span>
+          <input type="text" id="output-name" class="proj-select" placeholder="my-panorama"
+                 maxlength="100" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
       <div class="actions">
         <label class="proj-label" for="projection">Projection</label>
         <select id="projection" class="proj-select" title="Choose the output projection, or let the app pick based on the measured field of view">
@@ -54,7 +73,7 @@
     <section id="result-wrap" class="hidden">
       <div class="queue-head">
         <h2>Result</h2>
-        <a id="download-link" class="ghost" href="#">Download&nbsp;TIF</a>
+        <a id="download-link" class="ghost" href="#">Download&nbsp;TIFF</a>
       </div>
       <div id="result-frame"><img id="result-img" alt="Stitched panorama"></div>
     </section>
