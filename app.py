@@ -607,9 +607,10 @@ def main():
         print("WARNING: Hugin CLI tools missing:", ", ".join(TOOLS_MISSING), file=sys.stderr)
         print("Install with: sudo apt install hugin enblend", file=sys.stderr)
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    host = os.environ.get("HOST", "127.0.0.1")
+    httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
-    print(f"Serving Hugin Stitch UI at http://127.0.0.1:{port}  (Ctrl+C to stop)")
+    print(f"Serving Hugin Stitch UI at http://{host}:{port}  (Ctrl+C to stop)")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

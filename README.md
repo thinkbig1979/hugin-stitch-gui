@@ -17,6 +17,9 @@ is done by the Hugin binaries already installed on the system.
   rectilinear up to 100°, cylindrical up to 240°, equirectangular beyond that
 - Live progress with per-phase weighting (cpfind and blending dominate the wall clock)
 - PNG preview in the browser, full-resolution TIFF download
+- Copies the original capture time and EXIF data from the first frame into the
+  stitched panorama (via `exiftool` when installed), and uses it to name the
+  download file
 
 ## Requirements
 
@@ -32,7 +35,9 @@ On Debian/Ubuntu:
 sudo apt install hugin-tools enblend
 ```
 
-`exiftool` is optional and used for metadata when present.
+`exiftool` is optional; when present it copies the original EXIF date/time and
+metadata into the stitched panorama so the result keeps its capture timestamp.
+Without it the stitch still works, just without the metadata transfer.
 
 Python dependencies (`Pillow` for previews, `rawpy` for RAW decoding):
 
@@ -49,6 +54,25 @@ python app.py 9000     # or pick a port
 ```
 
 Open the URL, drop images in, click **Stitch panorama**.
+
+## Running with Docker
+
+Build an image that bundles the app plus Pillow, rawpy, the Hugin toolchain, and
+ExifTool, then run it on any machine with Docker:
+
+```bash
+docker build -t hugin-stitch-gui .
+docker run --rm -p 8765:8765 hugin-stitch-gui
+```
+
+Open http://localhost:8765. Inside the container the server binds to
+`0.0.0.0` (set `HOST`/`PORT` env vars to override). Stitch output is served
+over HTTP and scratch files live in the container's temp dir, so no volume is
+required; mount one under it if you want outputs on the host.
+
+Note that containers generally don't expose GPUs, so `enblend` falls back to
+CPU blending unless you pass `--device /dev/dri` (or `--gpus all` with the
+NVIDIA Container Toolkit) and your build of enblend was compiled with OpenCL.
 
 ## How stitching works
 
@@ -80,11 +104,19 @@ temporary directory per job.
 
 ```
 app.py              server, job runner, and Hugin pipeline
+Dockerfile          container image with the full toolchain
 requirements.txt    Pillow, rawpy
 static/index.html   UI markup
 static/app.js       queue, drag-and-drop, progress polling
 static/style.css    styling
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). The application is your own code and only invokes
+the external tools as separate command-line processes, so their copyleft
+licenses (GPL for Hugin/Enblend, GPL/Artistic for ExifTool) don't apply to this
+project; the binaries themselves keep their own licenses.
 
 ## Notes
 
