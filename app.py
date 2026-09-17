@@ -234,10 +234,17 @@ def _make_preview(tif_path, job_dir):
 
 
 def _copy_exif(src, dst, job_id):
-    """Copy EXIF from one source frame into the stitched TIFF with ExifTool.
+    """Copy EXIF from one source frame into the stitched output with ExifTool.
 
     Copies all metadata, then clears the tags that would be wrong on a
-    panorama (source pixel size, orientation) so viewers don't rotator-tilt it.
+    panorama (source pixel size, orientation). Two traps to avoid:
+
+    - "Orientation#=1" (the '#' disables print conversion): a plain
+      "Orientation=1" write stores value 3 ("Rotate 180") in ExifTool
+      versions seen on Debian, turning the panorama upside down.
+    - Never delete "ImageWidth"/"ImageHeight": on a TIFF those are the
+      mandatory structural tags and deleting them corrupts the file.
+
     Returns the DateTimeOriginal value if present, else None.
     """
     exif = shutil.which("exiftool")
@@ -251,9 +258,8 @@ def _copy_exif(src, dst, job_id):
                         "-TagsFromFile", src, "-all:all", dst],
                        check=True, capture_output=True, env=env)
         subprocess.run([exif, "-q", "-overwrite_original",
-                        "-Orientation=1", "-ImageWidth=", "-ImageHeight=",
-                        "-ExifImageWidth=", "-ExifImageHeight=", "-PixelXDimension=",
-                        "-PixelYDimension=", dst],
+                        "-Orientation#=1", "-ExifImageWidth=",
+                        "-ExifImageHeight=", dst],
                        check=True, capture_output=True, env=env)
     except subprocess.CalledProcessError as exc:
         _push_line(job_id, "exiftool transfer failed: "
