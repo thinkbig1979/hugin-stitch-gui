@@ -1,0 +1,214 @@
+"use strict";
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const thumbList = document.getElementById("thumb-list");
+const queueSection = document.getElementById("queue");
+const queueCount = document.getElementById("queue-count");
+const clearBtn = document.getElementById("clear-btn");
+const stitchBtn = document.getElementById("stitch-btn");
+const projectionSelect = document.getElementById("projection");
+const projHint = document.getElementById("proj-hint");
+const progressWrap = document.getElementById("progress-wrap");
+const progressFill = document.getElementById("progress-fill");
+const progressMsg = document.getElementById("progress-msg");
+const resultWrap = document.getElementById("result-wrap");
+const resultImg = document.getElementById("result-img");
+const downloadLink = document.getElementById("download-link");
+
+let files = [];
+let stitching = false;
+
+const PROJ_HINTS = {
+  auto: "Auto measures the final field of view and picks the projection: rectilinear for moderate sweeps, cylindrical for wide-but-far-from-360\u00b0, equirectangular near 360\u00b0.",
+  rectilinear: "Straight lines stay straight. Use for narrow sweeps (\u2264100\u00b0); beyond that the edges stretch badly.",
+  cylindrical: "Good for wide panoramas (100\u2013240\u00b0): verticals stay straight near the center, no edge stretch.",
+  equirectangular: "Spherical mapping; only recommended near 360\u00b0.",
+};
+
+function show(el) { el.classList.remove("hidden"); }
+function hide(el) { el.classList.add("hidden"); }
+
+function refreshQueue() {
+  queueCount.textContent = `(${files.length})`;
+  if (files.length === 0) {
+    hide(queueSection);
+  } else {
+    show(queueSection);
+  }
+  stitchBtn.disabled = files.length < 2 || stitching;
+  thumbList.replaceChildren();
+  files.forEach((entry, i) => thumbList.appendChild(makeThumb(entry, i)));
+}
+
+function makeThumb(entry, i) {
+  const li = document.createElement("li");
+  li.className = "thumb";
+  li.draggable = true;
+  li.dataset.index = String(i);
+
+  const img = document.createElement("img");
+  img.src = entry.url;
+  img.alt = entry.file.name;
+
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = String(i + 1);
+
+  const name = document.createElement("span");
+  name.className = "thumb-name";
+  name.textContent = entry.file.name;
+  name.title = entry.file.name;
+
+  const rem = document.createElement("button");
+  rem.type = "button";
+  rem.className = "remove";
+  rem.setAttribute("aria-label", "Remove " + entry.file.name);
+  rem.textContent = "\u00d7";
+  rem.addEventListener("click", () => {
+    files.splice(i, 1);
+    refreshQueue();
+  });
+
+  li.append(img, badge, name, rem);
+  return li;
+}
+
+function addFiles(list) {
+  const valid = Array.from(list).filter((f) => f.type.startsWith("image/") ||
+    /\.(jpe?g|png|bmp|tiff?|webp|cr2|cr3|nef|arw|dng|heic)$/i.test(f.name));
+  for (const f of valid) {
+    files.push({ file: f, url: URL.createObjectURL(f) });
+  }
+  refreshQueue();
+}
+
+dropZone.addEventListener("click", () => {
+  if (!stitching) fileInput.click();
+});
+fileInput.addEventListener("change", () => {
+  addFiles(fileInput.files);
+  fileInput.value = "";
+});
+
+["dragenter", "dragover"].forEach((ev) =>
+  dropZone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  })
+);
+["dragleave", "drop"].forEach((ev) =>
+  dropZone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+  })
+);
+dropZone.addEventListener("drop", (e) => {
+  if (e.dataTransfer && e.dataTransfer.files.length) {
+    addFiles(e.dataTransfer.files);
+  }
+});
+
+// Reordering via drag-and-drop on thumbnails
+let dragIndex = null;
+thumbList.addEventListener("dragstart", (e) => {
+  const li = e.target.closest("li.thumb");
+  if (!li) return;
+  dragIndex = Number(li.dataset.index);
+  li.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+});
+thumbList.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  const li = e.target.closest("li.thumb");
+  if (!li || dragIndex === null) return;
+  const overIndex = Number(li.dataset.index);
+  if (overIndex === dragIndex) return;
+  const [moved] = files.splice(dragIndex, 1);
+  files.splice(overIndex, 0, moved);
+  dragIndex = overIndex;
+  refreshQueue();
+});
+thumbList.addEventListener("dragend", () => { dragIndex = null; refreshQueue(); });
+
+clearBtn.addEventListener("click", () => {
+  for (const entry of files) URL.revokeObjectURL(entry.url);
+  files = [];
+  refreshQueue();
+});
+
+stitchBtn.addEventListener("click", async () => {
+  if (stitching || files.length < 2) return;
+  stitching = true;
+  hide(resultWrap);
+  show(progressWrap);
+  progressFill.style.width = "0%";
+  progressMsg.textContent = "Uploading images...";
+  stitchBtn.disabled = true;
+
+  const form = new FormData();
+  for (const entry of files) form.append("files", entry.file);
+  form.append("projection", projectionSelect.value);
+
+  let jobId;
+  try {
+    const res = await fetch("/stitch", { method: "POST", body: form });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || `upload failed (${res.status})`);
+    jobId = payload.job_id;
+  } catch (err) {
+    finishWithError(err.message);
+    return;
+  }
+
+  poll(jobId);
+});
+
+async function poll(jobId) {
+  try {
+    const res = await fetch(`/status/${jobId}`);
+    const st = await res.json();
+    progressFill.style.width = `${Math.round((st.progress || 0) * 100)}%`;
+    progressMsg.textContent = st.message || "Working...";
+
+    if (st.state === "done") {
+      stitching = false;
+      showResult(`/result/${jobId}`, `/download/${jobId}`);
+      return;
+    }
+    if (st.state === "error") {
+      finishWithError(st.message || "Stitching failed.");
+      return;
+    }
+    setTimeout(() => poll(jobId), 800);
+  } catch (err) {
+    finishWithError(err.message);
+  }
+}
+
+function showResult(previewUrl, downloadUrl) {
+  progressMsg.textContent = "";
+  hide(progressWrap);
+  resultImg.src = previewUrl;
+  downloadLink.href = downloadUrl;
+  show(resultWrap);
+  resultWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  stitching = false;
+  refreshQueue();
+}
+
+function finishWithError(msg) {
+  stitching = false;
+  progressFill.style.width = "0%";
+  progressMsg.textContent = msg;
+  progressMsg.classList.add("error");
+  show(progressWrap);
+  refreshQueue();
+  setTimeout(() => progressMsg.classList.remove("error"), 6000);
+}
+
+function updateProjHint() {
+  projHint.textContent = PROJ_HINTS[projectionSelect.value] || "";
+}
+projectionSelect.addEventListener("change", updateProjHint);
+updateProjHint();

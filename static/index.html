@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hugin Stitch</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Hugin Stitch</h1>
+      <p class="sub">Drop your photos to stitch them into a panorama via Hugin</p>
+    </header>
+
+    <section id="drop-zone" tabindex="0" role="button" aria-label="Drop zone">
+      <input type="file" id="file-input" accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.heic" multiple hidden>
+      <div class="dz-inner">
+        <svg class="dz-icon" viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <p><strong>Drag &amp; drop images here</strong></p>
+        <p class="hint">or click to browse · JPEG / PNG / TIFF / Canon&nbsp;RAW</p>
+      </div>
+    </section>
+
+    <section id="queue" class="hidden">
+      <div class="queue-head">
+        <h2>Images <span id="queue-count" class="count"></span></h2>
+        <button id="clear-btn" class="ghost" type="button">Clear</button>
+      </div>
+      <p class="hint">Drag thumbnails to reorder · notch a thumbnail to remove it</p>
+      <ul id="thumb-list"></ul>
+      <div class="actions">
+        <label class="proj-label" for="projection">Projection</label>
+        <select id="projection" class="proj-select" title="Choose the output projection, or let the app pick based on the measured field of view">
+          <option value="auto" selected>Auto (recommended)</option>
+          <option value="rectilinear">Rectilinear</option>
+          <option value="cylindrical">Cylindrical</option>
+          <option value="equirectangular">Equirectangular</option>
+        </select>
+        <button id="stitch-btn" class="primary" type="button" disabled>Stitch panorama</button>
+      </div>
+      <p class="hint" id="proj-hint"></p>
+    </section>
+
+    <section id="progress-wrap" class="hidden">
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <p id="progress-msg" class="progress-msg"></p>
+    </section>
+
+    <section id="result-wrap" class="hidden">
+      <div class="queue-head">
+        <h2>Result</h2>
+        <a id="download-link" class="ghost" href="#">Download&nbsp;TIF</a>
+      </div>
+      <div id="result-frame"><img id="result-img" alt="Stitched panorama"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
