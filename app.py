@@ -158,15 +158,41 @@ def _prepare_source(path, job_dir):
         return None, f"{os.path.basename(path)}: {exc}"
 
 
-def _locate_output(job_dir):
+def _locate_output(job_dir, fmt=None):
+    """Find the stitched output for a job.
+
+    Hugin names LDR output `result.<ext>` and HDR output `result_hdr.<ext>`,
+    so prefer the exact name for the chosen format and fall back to the
+    largest stitch file as a hedge against other Hugin versions.
+    """
+    if fmt in FORMATS:
+        for pat in FORMATS[fmt]["basenames"]:
+            hits = [p for p in glob.glob(os.path.join(job_dir, pat))
+                    if os.path.getsize(p) > 0]
+            if hits:
+                return hits[0]
     candidates = []
     for pattern in ("result*.tif", "result*.tiff", "result*.jpg",
-                    "result*.jpeg", "result*.png"):
+                    "result*.jpeg", "result*.png", "result*.exr"):
         candidates += glob.glob(os.path.join(job_dir, pattern))
     candidates = sorted((os.path.getsize(p), p) for p in candidates if os.path.getsize(p) > 0)
     if not candidates:
         return None
     return candidates[-1][1]  # largest
+
+
+def _locate_preview_source(job_dir, fmt):
+    """For HDR outputs Hugin also writes an LDR JPEG companion; use that to
+    build the browser preview because PIL cannot decode 32-bit float images."""
+    if not FORMATS[fmt]["hdr"]:
+        return None
+    for pat in ("result.jpg", "result.jpeg", "result.png",
+                "result.tif", "result.tiff"):
+        hits = [p for p in glob.glob(os.path.join(job_dir, pat))
+                if os.path.getsize(p) > 0]
+        if hits:
+            return hits[0]
+    return None
 
 
 # Hugin projection codes (pto "p fX" value): rectilinear, cylindrical,
@@ -221,12 +247,12 @@ def _resolve_projection(opt_pto, projection):
     return "3"                # near-360: equirectangular
 
 
-def _make_preview(tif_path, job_dir):
-    """16-bit TIFF -> 8-bit PNG so the browser can display it."""
+def _make_preview(image_path, job_dir):
+    """Stitched image -> 8-bit PNG so the browser can display it."""
     try:
         from PIL import Image
         png_path = os.path.join(job_dir, "preview.png")
-        with Image.open(tif_path) as im:
+        with Image.open(image_path) as im:
             im.convert("RGB").save(png_path, optimize=True)
         return png_path
     except Exception:  # noqa: BLE001
@@ -273,7 +299,45 @@ def _copy_exif(src, dst, job_id):
         return None
 
 
-OUTPUT_FORMATS = {"tif": ".tif", "jpg": ".jpg", "png": ".png"}
+# Output formats exposed in the UI, mapped to pano_modify arguments.
+# - LDR formats are encoded for display/storage (TIFF, PNG lossless; JPEG lossy).
+# - HDR formats keep the full stitch precision as linear floating point in a
+#   32-bit float container. Hugin emits a companion LDR JPEG alongside them so
+#   the browser still gets a real preview.
+FORMATS = {
+    "tif": {
+        "label": "TIFF", "ext": ".tif", "mime": "image/tiff",
+        "basenames": ("result.tif", "result.tiff"),
+        "args": ("--ldr-file=TIF",),
+        "quality": False, "hdr": False, "exif": True,
+    },
+    "png": {
+        "label": "PNG", "ext": ".png", "mime": "image/png",
+        "basenames": ("result.png",),
+        "args": ("--ldr-file=PNG",),
+        "quality": False, "hdr": False, "exif": True,
+    },
+    "jpg": {
+        "label": "JPEG", "ext": ".jpg", "mime": "image/jpeg",
+        "basenames": ("result.jpg", "result.jpeg"),
+        "args": ("--ldr-file=JPG",),
+        "quality": True, "hdr": False, "exif": True,
+    },
+    "tif_hdr": {
+        "label": "HDR TIFF", "ext": ".tif", "mime": "image/tiff",
+        "basenames": ("result_hdr.tif",),
+        "args": ("--output-type=HDR,NORMAL", "--ldr-file=JPG",
+                 "--hdr-file=TIF"),
+        "quality": False, "hdr": True, "exif": False,
+    },
+    "exr": {
+        "label": "OpenEXR", "ext": ".exr", "mime": "image/x-exr",
+        "basenames": ("result_hdr.exr",),
+        "args": ("--output-type=HDR,NORMAL", "--ldr-file=JPG",
+                 "--hdr-file=EXR"),
+        "quality": False, "hdr": True, "exif": False,
+    },
+}
 
 
 def _clean_download_name(name, ext):
@@ -347,11 +411,12 @@ def _run_job(job_id, image_paths):
                  message=f"Output projection: {proj_name}"
                          + (f" (coverage ~{hfov:.0f}\u00b0)" if hfov else ""))
         fmt = (job.get("format") or "tif").lower()
-        ext = OUTPUT_FORMATS.get(fmt, ".tif")
+        fmt_cfg = FORMATS[fmt]
+        ext = fmt_cfg["ext"]
         modify_args = ["pano_modify", f"--projection={proj_code}",
                        "--fov=AUTO", "--crop=AUTO", "--canvas=AUTO",
-                       f"--ldr-file={fmt.upper()}"]
-        if fmt == "jpg":
+                       *fmt_cfg["args"]]
+        if fmt_cfg["quality"]:
             modify_args.append(f"--ldr-compression={int(job.get('quality') or 90)}")
         modify_args += ["-o", os.path.join(job_dir, "pp.pto"), opt_pto]
         ok, msg = _run_tool(job_id, 4, modify_args)
@@ -367,17 +432,17 @@ def _run_job(job_id, image_paths):
                  message="Stitching failed: " + str(exc).strip())
         return
 
-    output = _locate_output(job_dir)
+    output = _locate_output(job_dir, fmt)
     if output is None:
         _set_job(job_id, state="error", progress=1,
                  message="Hugin did not produce an output file. The images may "
                          "have too little overlap.")
         return
 
-    preview = _make_preview(output, job_dir)
-    dt = _copy_exif(image_paths[0], output, job_id)
-    fmt = (job.get("format") or "tif").lower()
-    ext = OUTPUT_FORMATS.get(fmt, ".tif")
+    preview = _make_preview(_locate_preview_source(job_dir, fmt) or output, job_dir)
+    dt = None
+    if fmt_cfg["exif"]:
+        dt = _copy_exif(image_paths[0], output, job_id)
     if job.get("filename"):
         download_name = _clean_download_name(job["filename"], ext)
     else:
@@ -511,10 +576,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/download/"):
                 target = job.get("download")
-                ext = os.path.splitext(target or "")[1].lower()
-                content_type = {"": "image/tiff", ".png": "image/png"}.get(
-                    ext, "image/jpeg" if ext in (".jpg", ".jpeg") else "image/tiff")
-                name = job.get("download_name", "stitched" + (ext or ".tif"))
+                fmt = (job.get("format") or "tif").lower()
+                cfg = FORMATS.get(fmt)
+                if cfg:
+                    content_type = cfg["mime"]
+                else:
+                    ext = os.path.splitext(target or "")[1].lower()
+                    content_type = {"": "image/tiff", ".png": "image/png"}.get(
+                        ext, "image/jpeg" if ext in (".jpg", ".jpeg") else "image/tiff")
+                name = job.get("download_name", "stitched" + (cfg["ext"] if cfg else ".tif"))
             else:
                 target = job.get("preview")
                 content_type = "image/png"
@@ -584,7 +654,7 @@ class Handler(BaseHTTPRequestHandler):
                 projection = "auto"
 
             fmt = (fields.get("format") or "tif").strip().lower()
-            if fmt not in OUTPUT_FORMATS:
+            if fmt not in FORMATS:
                 fmt = "tif"
             try:
                 quality = min(100, max(1, int(float(fields.get("quality") or 90))))

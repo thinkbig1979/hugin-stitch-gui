@@ -18,8 +18,10 @@ is done by the Hugin binaries already installed on the system.
 - Auto mode measures the horizontal field of view from the optimised project and picks
   rectilinear up to 100°, cylindrical up to 240°, equirectangular beyond that
 - Live progress with per-phase weighting (cpfind and blending dominate the wall clock)
-- PNG preview in the browser; output format selectable as full-resolution TIFF
-  (lossless), JPEG, or PNG, with a quality slider for JPEG
+- PNG preview in the browser; output format selectable from all the formats
+  Hugin supports, each explained in the UI before you commit: TIFF (8-bit
+  lossless), PNG (8-bit lossless), JPEG (lossy, with a quality slider), HDR
+  TIFF (32-bit float linear), or OpenEXR (32-bit float linear)
 - Optional custom output filename (the app falls back to a timestamp- or
   first-frame-derived name otherwise)
 - Copies the original capture time and EXIF data from the first frame into the
@@ -99,7 +101,7 @@ speed comes from on large panoramas.
 | POST   | `/stitch`        | Multipart upload of images + projection/format/quality/filename fields, returns a job id |
 | GET    | `/status/<id>`   | Job state, progress fraction, current phase message |
 | GET    | `/result/<id>`   | PNG preview of the finished panorama         |
-| GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, JPEG, or PNG) |
+| GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, PNG, JPEG, HDR TIFF, or EXR) |
 | POST   | `/health`        | Toolchain availability report                |
 
 Uploads are capped at 4 GB per request. Jobs run in a background thread and write to a

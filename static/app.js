@@ -31,10 +31,21 @@ const PROJ_HINTS = {
   equirectangular: "Spherical mapping; only recommended near 360\u00b0.",
 };
 
-const FORMAT_LABELS = { tif: "TIFF", jpg: "JPEG", png: "PNG", jpeg: "JPEG" };
+const FORMAT_LABELS = { tif: "TIFF", png: "PNG", jpg: "JPEG", tif_hdr: "HDR TIFF", exr: "EXR" };
+
+const FORMAT_HINTS = {
+  tif: "8-bit RGBA, LZW (lossless). Best all-round choice for display and printing: pixel-exact, compact, and readable everywhere.",
+  png: "8-bit RGBA, Deflate (lossless). Universally supported and pixel-exact, but the files are larger than TIFF at equal quality.",
+  jpg: "8-bit RGB, lossy DCT compression. Smallest files, fine for sharing \u2014 but colours, gradients and fine detail degrade (quality slider above).",
+  tif_hdr: "Linear, scene-referred 32-bit float. Keeps the full precision and range of the stitch with no tone mapping \u2014 the archive choice for further editing. Large files, and normal image viewers may not open it.",
+  exr: "OpenEXR, 32-bit float, PIZ (lossless). The standard interchange format for HDR, VFX and 3D pipelines. Same precision as HDR TIFF; browsers can\u2019t show it, so the preview below is a separate JPEG.",
+};
+
+const formatHint = document.getElementById("format-hint");
 
 function updateFormatControls() {
   qualityWrap.classList.toggle("hidden", formatSelect.value !== "jpg");
+  formatHint.textContent = FORMAT_HINTS[formatSelect.value] || "";
 }
 
 function updateDownloadLabel() {
