@@ -8,6 +8,8 @@ The server is a single Python file on the standard library `http.server`. Nothin
 nothing is uploaded anywhere: images stay on the machine running it, and all the heavy lifting
 is done by the Hugin binaries already installed on the system.
 
+![Hugin Stitch GUI screenshot](static/screenshot.png)
+
 ## What it does
 
 - Drag-and-drop queue with thumbnails, drag-to-reorder, and per-image removal
@@ -16,7 +18,10 @@ is done by the Hugin binaries already installed on the system.
 - Auto mode measures the horizontal field of view from the optimised project and picks
   rectilinear up to 100°, cylindrical up to 240°, equirectangular beyond that
 - Live progress with per-phase weighting (cpfind and blending dominate the wall clock)
-- PNG preview in the browser, full-resolution TIFF download
+- PNG preview in the browser; output format selectable as full-resolution TIFF
+  (lossless), JPEG, or PNG, with a quality slider for JPEG
+- Optional custom output filename (the app falls back to a timestamp- or
+  first-frame-derived name otherwise)
 - Copies the original capture time and EXIF data from the first frame into the
   stitched panorama (via `exiftool` when installed), and uses it to name the
   download file
@@ -49,8 +54,8 @@ python3 -m venv .venv
 ## Running
 
 ```bash
-python app.py          # http://127.0.0.1:8765
-python app.py 9000     # or pick a port
+python3 app.py          # http://127.0.0.1:8765
+python3 app.py 9000     # or pick a port
 ```
 
 Open the URL, drop images in, click **Stitch panorama**.
@@ -80,8 +85,8 @@ NVIDIA Container Toolkit) and your build of enblend was compiled with OpenCL.
 pto_gen        create the project from the input images
 cpfind         find control points between overlapping frames
 autooptimiser  solve for camera positions and lens parameters
-pano_modify    set projection, field of view, crop, and canvas
-hugin_executor remap with nona, blend with enblend
+pano_modify    set projection, field of view, crop, canvas, output type/quality
+hugin_executor remap with nona, blend with enblend into the chosen format
 ```
 
 `enblend` uses OpenCL when it was built with GPU support, which is where most of the blending
@@ -91,10 +96,10 @@ speed comes from on large panoramas.
 
 | Method | Path             | Purpose                                      |
 |--------|------------------|----------------------------------------------|
-| POST   | `/stitch`        | Multipart upload of images + projection choice, returns a job id |
+| POST   | `/stitch`        | Multipart upload of images + projection/format/quality/filename fields, returns a job id |
 | GET    | `/status/<id>`   | Job state, progress fraction, current phase message |
 | GET    | `/result/<id>`   | PNG preview of the finished panorama         |
-| GET    | `/download/<id>` | Full-resolution TIFF                         |
+| GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, JPEG, or PNG) |
 | POST   | `/health`        | Toolchain availability report                |
 
 Uploads are capped at 4 GB per request. Jobs run in a background thread and write to a
@@ -109,6 +114,7 @@ requirements.txt    Pillow, rawpy
 static/index.html   UI markup
 static/app.js       queue, drag-and-drop, progress polling
 static/style.css    styling
+static/screenshot.png  screenshot used in this README
 ```
 
 ## License
