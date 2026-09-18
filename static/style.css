@@ -166,6 +166,14 @@ section { margin-top: 32px; }
 .check > span { display: flex; flex-direction: column; gap: 2px; }
 .check .check-label { font-size: .92rem; }
 .check .hint { margin: 0; max-width: 62ch; }
+.progress-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.progress-foot .progress-msg { flex: 1; }
+.progress-foot .ghost { flex: none; }
 .tune { margin-top: 14px; }
 .tune summary {
   cursor: pointer;

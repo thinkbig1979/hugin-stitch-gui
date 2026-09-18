@@ -33,8 +33,11 @@ is done by the Hugin binaries already installed on the system.
   Hugin supports, each explained in the UI before you commit: TIFF (8-bit
   lossless), PNG (8-bit lossless), JPEG (lossy, with a quality slider), HDR
   TIFF (32-bit float linear), or OpenEXR (32-bit float linear)
-- Optional custom output filename (the app falls back to a timestamp- or
-  first-frame-derived name otherwise)
+- Optional custom output filename, read when you click Download rather than
+  when the stitch started, so a late rename still takes effect (the app falls
+  back to a timestamp- or first-frame-derived name otherwise)
+- Stop button to abandon a running stitch, which kills the whole tool tree and
+  discards the partial output
 - Copies the original capture time and EXIF data from the first frame into the
   stitched panorama (via `exiftool` when installed), and uses it to name the
   download file
@@ -187,13 +190,23 @@ that was otherwise left at zero. It costs about a second.
 |--------|------------------|----------------------------------------------|
 | POST   | `/stitch`        | Multipart upload of images + projection/format/quality/filename/level/photometric/yaw/pitch/roll fields, returns a job id |
 | GET    | `/status/<id>`   | Job state, progress fraction, current phase message |
+| POST   | `/cancel/<id>`   | Stop a running stitch; 409 if it already finished |
 | GET    | `/result/<id>`   | PNG preview of the finished panorama         |
-| GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, PNG, JPEG, HDR TIFF, or EXR) |
+| GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, PNG, JPEG, HDR TIFF, or EXR); `?name=` overrides the filename |
 | GET    | `/health`        | Toolchain availability report (POST also accepted) |
 
 `level` and `photometric` accept `0`/`false`/`off`/`no` to disable that
 correction; any other value, including omitting the field, leaves it on.
 `yaw`, `pitch` and `roll` are degrees, default `0`, clamped to ±180.
+
+`/download` takes an optional `name` query parameter, which overrides the name
+chosen when the job finished. The extension always comes from the format that
+was actually stitched, never from the supplied name.
+
+`/status` reports `running`, `done`, `error` or `cancelled`. Cancelling kills
+the tool and everything it started, then deletes the job's working directory,
+so a stopped stitch leaves nothing behind. On Windows only the tool itself is
+killed, so a `nona` or `enblend` helper may run on briefly.
 
 Uploads are capped at 4 GB per request. Jobs run in a background goroutine and write to a
 temporary directory per job.
@@ -211,6 +224,8 @@ formats.go          output formats and projection codes
 images.go           preview rendering and RAW decoding
 exif.go             metadata transfer via ExifTool
 naming.go           filename sanitising for uploads and downloads
+proc_unix.go        process-group teardown so cancelling kills the tool tree
+proc_windows.go     the Windows no-op equivalent
 toolchain.go        PATH probing for the Hugin and optional tools
 *_test.go           unit tests for the pipeline, parsing and HTTP surface
 Dockerfile          container image with the full toolchain

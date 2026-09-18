@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // phase is one step of the pipeline and the slice of the progress bar it owns.
@@ -63,7 +64,10 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 		return
 	}
 
-	sources, unreadable := p.prepareSources(job, uploaded)
+	sources, unreadable := p.prepareSources(ctx, job, uploaded)
+	if p.aborted(ctx, job) {
+		return
+	}
 	if len(sources) < 2 {
 		msg := "Need at least 2 readable images."
 		if len(unreadable) > 0 {
@@ -76,20 +80,30 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 	dir := job.Dir
 	path := func(name string) string { return filepath.Join(dir, name) }
 
-	if err := p.runTool(ctx, job, 1, "pto_gen", append([]string{"-o", path("project.pto")}, sources...)); err != nil {
-		job.fail("Stitching failed: " + err.Error())
+	// step runs one tool and reports whether the pipeline should carry on. A
+	// job the user cancelled is not a failure, so it is reported separately.
+	step := func(phase int, tool string, args []string) bool {
+		err := p.runTool(ctx, job, phase, tool, args)
+		if err == nil {
+			return true
+		}
+		if !p.aborted(ctx, job) {
+			job.fail("Stitching failed: " + err.Error())
+		}
+		return false
+	}
+
+	if !step(1, "pto_gen", append([]string{"-o", path("project.pto")}, sources...)) {
 		return
 	}
-	if err := p.runTool(ctx, job, 2, "cpfind", []string{"-o", path("cp.pto"), path("project.pto")}); err != nil {
-		job.fail("Stitching failed: " + err.Error())
+	if !step(2, "cpfind", []string{"-o", path("cp.pto"), path("project.pto")}) {
 		return
 	}
 
 	cleaned := p.cleanControlPoints(ctx, job, path("cp.pto"))
 
-	if err := p.runTool(ctx, job, phaseOptimise, "autooptimiser",
-		optimiserArgs(job.Level, job.Photometric, path("opt.pto"), cleaned)); err != nil {
-		job.fail("Stitching failed: " + err.Error())
+	if !step(phaseOptimise, "autooptimiser",
+		optimiserArgs(job.Level, job.Photometric, path("opt.pto"), cleaned)) {
 		return
 	}
 
@@ -116,15 +130,13 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 		modifyArgs = append(modifyArgs, "--ldr-compression="+strconv.Itoa(job.Quality))
 	}
 	modifyArgs = append(modifyArgs, "-o", path("pp.pto"), optPTO)
-	if err := p.runTool(ctx, job, phaseModify, "pano_modify", modifyArgs); err != nil {
-		job.fail("Stitching failed: " + err.Error())
+	if !step(phaseModify, "pano_modify", modifyArgs) {
 		return
 	}
 
-	if err := p.runTool(ctx, job, phaseStitch, "hugin_executor", []string{
+	if !step(phaseStitch, "hugin_executor", []string{
 		"--prefix=" + path("result"), "--stitching", path("pp.pto"),
-	}); err != nil {
-		job.fail("Stitching failed: " + err.Error())
+	}) {
 		return
 	}
 
@@ -243,11 +255,26 @@ func (p *Pipeline) cleanControlPoints(ctx context.Context, job *Job, input strin
 	return current
 }
 
+// aborted reports whether the job was stopped by the user, recording the fact
+// and discarding the half-finished work if so. A cancelled stitch can only
+// have produced partial output, which may run to gigabytes.
+func (p *Pipeline) aborted(ctx context.Context, job *Job) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	job.markCancelled()
+	os.RemoveAll(job.Dir)
+	return true
+}
+
 // prepareSources passes normal images straight through and demosaics RAW files
 // so Hugin can read them. It returns the usable sources and a description of
 // each file it had to skip.
-func (p *Pipeline) prepareSources(job *Job, uploaded []string) (sources, unreadable []string) {
+func (p *Pipeline) prepareSources(ctx context.Context, job *Job, uploaded []string) (sources, unreadable []string) {
 	for i, src := range uploaded {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
 		job.setProgress(
 			round4(phases[0].end*float64(i+1)/float64(len(uploaded))),
 			fmt.Sprintf("Preparing images (%d/%d)...", i+1, len(uploaded)),
@@ -272,6 +299,10 @@ func (p *Pipeline) runTool(ctx context.Context, job *Job, phaseIndex int, name s
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	useProcessGroup(cmd)
+	// Without a delay, Wait blocks on the output pipe until every process
+	// holding it has gone, which a killed tool's children may not do promptly.
+	cmd.WaitDelay = 2 * time.Second
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("could not run %q: %w", name, err)

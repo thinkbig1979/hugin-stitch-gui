@@ -23,12 +23,15 @@ const resetTuneBtn = document.getElementById("reset-tune");
 const progressWrap = document.getElementById("progress-wrap");
 const progressFill = document.getElementById("progress-fill");
 const progressMsg = document.getElementById("progress-msg");
+const cancelBtn = document.getElementById("cancel-btn");
 const resultWrap = document.getElementById("result-wrap");
 const resultImg = document.getElementById("result-img");
 const downloadLink = document.getElementById("download-link");
 
 let files = [];
 let stitching = false;
+let currentJob = null;
+let cancelling = false;
 
 const PROJ_HINTS = {
   auto: "Auto measures the final field of view and picks the projection: rectilinear for moderate sweeps, cylindrical for wide-but-far-from-360\u00b0, equirectangular near 360\u00b0.",
@@ -56,6 +59,16 @@ function updateFormatControls() {
 
 function updateDownloadLabel() {
   downloadLink.textContent = `Download\u00a0${FORMAT_LABELS[formatSelect.value] || "TIFF"}`;
+}
+
+// The filename is read when the link is followed, not when the stitch was
+// started, so editing it after the panorama is ready still renames the file.
+// An empty field leaves the server's own name in place.
+function refreshDownloadHref() {
+  const base = downloadLink.dataset.base;
+  if (!base) return;
+  const name = outputNameInput.value.trim();
+  downloadLink.href = name ? `${base}?name=${encodeURIComponent(name)}` : base;
 }
 
 function show(el) { el.classList.remove("hidden"); }
@@ -193,6 +206,7 @@ stitchBtn.addEventListener("click", async () => {
   form.append("yaw", yawInput.value || "0");
 
   let jobId;
+  cancelling = false;
   try {
     const res = await fetch("/stitch", { method: "POST", body: form });
     const payload = await res.json().catch(() => ({}));
@@ -203,6 +217,8 @@ stitchBtn.addEventListener("click", async () => {
     return;
   }
 
+  currentJob = jobId;
+  show(cancelBtn);
   poll(jobId);
 });
 
@@ -215,7 +231,13 @@ async function poll(jobId) {
 
     if (st.state === "done") {
       stitching = false;
+      hide(cancelBtn);
+      currentJob = null;
       showResult(`/result/${jobId}`, `/download/${jobId}`);
+      return;
+    }
+    if (st.state === "cancelled") {
+      finishStitch(st.message || "Stitch cancelled.");
       return;
     }
     if (st.state === "error") {
@@ -232,7 +254,8 @@ function showResult(previewUrl, downloadUrl) {
   progressMsg.textContent = "";
   hide(progressWrap);
   resultImg.src = previewUrl;
-  downloadLink.href = downloadUrl;
+  downloadLink.dataset.base = downloadUrl;
+  refreshDownloadHref();
   updateDownloadLabel();
   show(resultWrap);
   resultWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -240,8 +263,35 @@ function showResult(previewUrl, downloadUrl) {
   refreshQueue();
 }
 
+cancelBtn.addEventListener("click", async () => {
+  if (!currentJob || cancelling) return;
+  cancelling = true;
+  cancelBtn.disabled = true;
+  progressMsg.textContent = "Stopping...";
+  try {
+    await fetch(`/cancel/${currentJob}`, { method: "POST" });
+  } catch (err) {
+    // The poll below reports whatever actually happened to the job.
+  }
+  cancelBtn.disabled = false;
+});
+
+// Ends a stitch without treating the outcome as a failure.
+function finishStitch(msg) {
+  stitching = false;
+  cancelling = false;
+  currentJob = null;
+  hide(cancelBtn);
+  progressFill.style.width = "0%";
+  progressMsg.textContent = msg;
+  refreshQueue();
+}
+
 function finishWithError(msg) {
   stitching = false;
+  cancelling = false;
+  currentJob = null;
+  hide(cancelBtn);
   progressFill.style.width = "0%";
   progressMsg.textContent = msg;
   progressMsg.classList.add("error");
@@ -249,6 +299,8 @@ function finishWithError(msg) {
   refreshQueue();
   setTimeout(() => progressMsg.classList.remove("error"), 6000);
 }
+
+outputNameInput.addEventListener("input", refreshDownloadHref);
 
 resetTuneBtn.addEventListener("click", () => {
   rollInput.value = "0";

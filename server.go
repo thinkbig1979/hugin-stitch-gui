@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stitch", s.handleStitch)
 	mux.HandleFunc("/status/", s.handleStatus)
+	mux.HandleFunc("/cancel/", s.handleCancel)
 	mux.HandleFunc("/result/", s.handleResult)
 	mux.HandleFunc("/download/", s.handleDownload)
 	mux.HandleFunc("/health", s.handleHealth)
@@ -121,6 +122,27 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, job.Status())
 }
 
+// handleCancel stops a running stitch at the user's request.
+func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	job, ok := s.jobFromPath(w, r)
+	if !ok {
+		return
+	}
+	if !job.Cancel() {
+		// The job finished on its own between the click and this request.
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "job is no longer running",
+			"state": job.Status().State,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"cancelled": true})
+}
+
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	job, ok := s.jobFromPath(w, r)
 	if !ok {
@@ -137,6 +159,12 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	_, download, name := job.results()
 	_, format := lookupFormat(job.Format)
+	// A name in the query wins, so editing the filename after the stitch has
+	// finished still renames the download. The extension always comes from the
+	// format that was actually stitched, never from what the user typed.
+	if requested := strings.TrimSpace(r.URL.Query().Get("name")); requested != "" {
+		name = cleanDownloadName(requested, format.Ext)
+	}
 	if name == "" {
 		name = "stitched" + format.Ext
 	}
@@ -253,9 +281,16 @@ func (s *Server) handleStitch(w http.ResponseWriter, r *http.Request) {
 		state:       StateRunning,
 		message:     "Starting...",
 	}
+	// Each job gets its own context so one can be cancelled without
+	// disturbing the others, while server shutdown still stops them all.
+	jobCtx, cancel := context.WithCancel(s.ctx)
+	job.cancel = cancel
 	s.jobs.Add(job)
 
-	go s.pipeline.Run(s.ctx, job, images)
+	go func() {
+		defer cancel()
+		s.pipeline.Run(jobCtx, job, images)
+	}()
 
 	writeJSON(w, http.StatusOK, map[string]string{"job_id": job.ID})
 }

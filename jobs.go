@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"math"
@@ -9,9 +10,10 @@ import (
 
 // Job state values reported to the browser.
 const (
-	StateRunning = "running"
-	StateDone    = "done"
-	StateError   = "error"
+	StateRunning   = "running"
+	StateDone      = "done"
+	StateError     = "error"
+	StateCancelled = "cancelled"
 )
 
 // maxLogLines bounds the per-job log tail kept for error reporting.
@@ -39,6 +41,10 @@ type Job struct {
 	Photometric bool
 	// Rotation is a manual nudge applied on top of the solved orientation.
 	Rotation Rotation
+
+	// cancel stops the pipeline and every tool it has running. It is nil
+	// once the job has finished.
+	cancel context.CancelFunc
 
 	// Progress, updated as the pipeline runs.
 	state    string
@@ -81,6 +87,31 @@ func (j *Job) fail(message string) {
 	j.state = StateError
 	j.progress = 1
 	j.message = message
+}
+
+// Cancel stops a running job, reporting whether there was anything to stop.
+// Cancelling an already finished job is not an error, it just does nothing.
+func (j *Job) Cancel() bool {
+	j.mu.Lock()
+	if j.state != StateRunning || j.cancel == nil {
+		j.mu.Unlock()
+		return false
+	}
+	cancel := j.cancel
+	j.mu.Unlock()
+
+	cancel()
+	return true
+}
+
+// markCancelled records that the job stopped because the user asked it to,
+// which the UI presents differently from a stitch that failed on its own.
+func (j *Job) markCancelled() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.state = StateCancelled
+	j.progress = 0
+	j.message = "Stitch cancelled."
 }
 
 func (j *Job) finish(message string) {
