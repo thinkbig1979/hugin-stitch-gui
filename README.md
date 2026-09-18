@@ -17,18 +17,20 @@ is done by the Hugin binaries already installed on the system.
 - Projection choice: auto, rectilinear, cylindrical, or equirectangular
 - Auto mode measures the horizontal field of view from the optimised project and picks
   rectilinear up to 100°, cylindrical up to 240°, equirectangular beyond that
+- Control-point cleanup: discards matches found in drifting cloud and moving
+  water before solving, which is where a tilted or bowed horizon usually starts
+- Lens distortion is solved from the control points as part of alignment
 - Horizon levelling (on by default): rotates the panorama so the horizon sits
   flat, which also stops a level horizon rendering as a curve in cylindrical and
   equirectangular output
 - Exposure and vignetting matching (on by default): solves the true brightness
   difference between frames from their overlaps rather than trusting EXIF, and
   corrects lens vignetting
-- Control-point cleanup: discards matches found in drifting cloud and moving
-  water before solving, which is where a tilted or bowed horizon usually starts
 - Manual yaw/pitch/roll nudge for when the automatic orientation lands close but
   not quite
-- Lens distortion is solved from the control points as part of alignment
 - Live progress with per-phase weighting (cpfind and blending dominate the wall clock)
+- Stop button to abandon a running stitch, which kills the whole tool tree and
+  discards the partial output
 - PNG preview in the browser; output format selectable from all the formats
   Hugin supports, each explained in the UI: TIFF (8-bit lossless), PNG (8-bit
   lossless), JPEG (lossy, with a quality slider), HDR TIFF (32-bit float
@@ -38,8 +40,6 @@ is done by the Hugin binaries already installed on the system.
 - Optional custom output filename, read when you click Download rather than
   when the stitch started, so a late rename still takes effect (the app falls
   back to a timestamp- or first-frame-derived name otherwise)
-- Stop button to abandon a running stitch, which kills the whole tool tree and
-  discards the partial output
 - Copies the original capture time and EXIF data from the first frame into the
   stitched panorama (via `exiftool` when installed), and uses it to name the
   download file
