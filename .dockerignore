@@ -16,3 +16,6 @@ LICENSE
 
 # The screenshot is documentation, not part of the binary
 static/screenshot.png
+
+# Tests are not built into the image
+*_test.go

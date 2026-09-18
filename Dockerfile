@@ -26,7 +26,14 @@ COPY --from=build /out/hugin-stitch-gui /usr/local/bin/hugin-stitch-gui
 # The UI is embedded in the binary, so nothing else needs to be copied.
 ENV HOST=0.0.0.0
 ENV PORT=8765
+# How long a finished stitch is kept. 0s keeps every job until the server stops.
+ENV RETENTION=2h
 
 EXPOSE 8765
+
+# Reports serving, not engine readiness: a missing Hugin tool is a broken
+# image rather than something a restart would fix.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["perl", "-MIO::Socket::INET", "-e", "my $s = IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => $ENV{PORT} || 8765, Timeout => 3) or exit 1; print $s \"GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\"; my $r = <$s>; exit($r =~ / 200 / ? 0 : 1);"]
 
 ENTRYPOINT ["hugin-stitch-gui"]
