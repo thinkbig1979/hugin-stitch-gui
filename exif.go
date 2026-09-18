@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -52,4 +53,35 @@ func copyEXIF(ctx context.Context, tools Toolchain, src, dst string, job *Job) s
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// copyMetadata transfers a finished panorama's own metadata from the master
+// into a re-encoded copy of it.
+//
+// The stitch tags the master and only the master, but every LDR download
+// except TIFF is re-encoded from it by Go's image packages, which write no
+// metadata whatsoever. Without this step a JPEG or PNG download arrives bare,
+// having lost the capture time the stitch went to the trouble of copying.
+//
+// Two things make this safe to do bluntly:
+//
+//   - ExifTool identifies both files from their content, so dst may still be
+//     the part-written temporary that has not got its real extension yet.
+//   - Tags describing the master's own storage rather than the picture, the
+//     TIFF strip offsets among them, are "unsafe" in ExifTool's sense and are
+//     left behind by the "-all:all" wildcard instead of corrupting the copy.
+//
+// Orientation and the source pixel size need no second thought here: copyEXIF
+// already corrected them on the master, so what arrives is already right.
+func copyMetadata(tools Toolchain, master, dst string) error {
+	if !tools.Has("exiftool") {
+		return nil
+	}
+	cmd := exec.Command(tools.Path("exiftool"), "-q", "-overwrite_original",
+		"-TagsFromFile", master, "-all:all", dst)
+	cmd.Env = tools.Env()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("exiftool: %s", firstLine(string(output), err))
+	}
+	return nil
 }

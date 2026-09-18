@@ -6,6 +6,7 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -24,9 +25,12 @@ import (
 // it would only lose its LZW compression, which this package's TIFF writer
 // does not implement.
 //
+// The master's metadata is carried into the encoded file, because the image
+// packages that do the encoding write none of their own.
+//
 // Encoded files are cached per format and quality, so re-downloading or
 // switching back to a format already produced costs nothing.
-func encodeTo(master, dir, key string, quality int) (string, error) {
+func encodeTo(tools Toolchain, master, dir, key string, quality int) (string, error) {
 	format, ok := formats[key]
 	if !ok {
 		return "", fmt.Errorf("unknown format %q", key)
@@ -61,6 +65,13 @@ func encodeTo(master, dir, key string, quality int) (string, error) {
 	if err := f.Close(); err != nil {
 		os.Remove(tmp)
 		return "", err
+	}
+	// Tag before the rename, so the cached file is never visible without its
+	// metadata, and the transfer is paid for once per format rather than once
+	// per download. A failure here is not fatal: a download carrying no
+	// metadata is worth more than no download at all.
+	if err := copyMetadata(tools, master, tmp); err != nil {
+		log.Printf("metadata transfer into the %s download failed: %v", key, err)
 	}
 	// Rename last, so a reader never sees a half-written file.
 	if err := os.Rename(tmp, out); err != nil {

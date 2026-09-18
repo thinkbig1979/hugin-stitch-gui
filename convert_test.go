@@ -74,7 +74,7 @@ func TestEncodeToServesTheMasterUnchangedForItsOwnFormat(t *testing.T) {
 	dir := t.TempDir()
 	master := writeMaster(t, dir)
 
-	got, err := encodeTo(master, dir, "tif", 90)
+	got, err := encodeTo(Toolchain{}, master, dir, "tif", 90)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestEncodeToProducesReadableOutput(t *testing.T) {
 	master := writeMaster(t, dir)
 
 	for _, key := range []string{"png", "jpg"} {
-		path, err := encodeTo(master, dir, key, 85)
+		path, err := encodeTo(Toolchain{}, master, dir, key, 85)
 		if err != nil {
 			t.Fatalf("encodeTo(%s): %v", key, err)
 		}
@@ -116,7 +116,7 @@ func TestJPEGOutputIsOpaque(t *testing.T) {
 	dir := t.TempDir()
 	master := writeMaster(t, dir)
 
-	path, err := encodeTo(master, dir, "jpg", 90)
+	path, err := encodeTo(Toolchain{}, master, dir, "jpg", 90)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,11 +139,11 @@ func TestEncodeToCachesByFormatAndQuality(t *testing.T) {
 	dir := t.TempDir()
 	master := writeMaster(t, dir)
 
-	first, err := encodeTo(master, dir, "jpg", 60)
+	first, err := encodeTo(Toolchain{}, master, dir, "jpg", 60)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := encodeTo(master, dir, "jpg", 60)
+	again, err := encodeTo(Toolchain{}, master, dir, "jpg", 60)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestEncodeToCachesByFormatAndQuality(t *testing.T) {
 		t.Errorf("same request produced %q then %q", first, again)
 	}
 
-	other, err := encodeTo(master, dir, "jpg", 95)
+	other, err := encodeTo(Toolchain{}, master, dir, "jpg", 95)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestEncodeToRefusesHDR(t *testing.T) {
 	master := writeMaster(t, dir)
 
 	for _, key := range []string{"tif_hdr", "exr"} {
-		if _, err := encodeTo(master, dir, key, 90); err == nil {
+		if _, err := encodeTo(Toolchain{}, master, dir, key, 90); err == nil {
 			t.Errorf("encodeTo(%s) should refuse: HDR cannot be re-encoded", key)
 		}
 	}

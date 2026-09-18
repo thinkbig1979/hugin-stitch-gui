@@ -219,7 +219,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	path := master
 	if format.Convertible() {
 		job.convertMu.Lock()
-		converted, err := encodeTo(master, job.Dir, key, quality)
+		converted, err := encodeTo(s.tools, master, job.Dir, key, quality)
 		job.convertMu.Unlock()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

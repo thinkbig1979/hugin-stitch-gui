@@ -186,7 +186,7 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 	// formats are encoded on demand when the selector is changed.
 	if requested.Convertible() {
 		job.setProgress(phases[phaseStitch].end, "Preparing "+requested.Label+" download...")
-		if _, err := encodeTo(output, dir, job.Format, job.Quality); err != nil {
+		if _, err := encodeTo(p.tools, output, dir, job.Format, job.Quality); err != nil {
 			// Not fatal: the download path will try again and report properly.
 			job.pushLine("could not pre-encode the " + requested.Label + " download: " + err.Error())
 		}
