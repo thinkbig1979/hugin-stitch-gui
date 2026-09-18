@@ -173,6 +173,12 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 		}
 	}
 
+	// The frames, the copies made of them and the Hugin projects have all
+	// done their work by now, and on a RAW shoot they are the bulk of the
+	// directory. The panorama, its preview and any encoded download stay.
+	pruneIntermediates(dir, append(append([]string{}, uploaded...), sources...),
+		output, preview, previewSource)
+
 	message := "Stitch complete"
 	if name := projectionFriendly[projCode]; name != "" {
 		message += " [" + name + "]"

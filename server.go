@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // MaxUploadBytes caps a single /stitch request. Uploads stream to disk, so
@@ -37,6 +39,9 @@ type Server struct {
 	static   http.FileSystem
 	// ctx is cancelled at shutdown so running tools are torn down with it.
 	ctx context.Context
+	// running tracks the pipeline goroutines. They outlive the HTTP handler
+	// that started them, so shutdown has to wait for them separately.
+	running sync.WaitGroup
 }
 
 // NewServer builds the HTTP surface. When staticDir is non-empty the UI is
@@ -119,6 +124,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Polling counts as interest: a page still watching a job keeps it alive.
+	job.Touch()
 	writeJSON(w, http.StatusOK, job.Status())
 }
 
@@ -148,6 +155,12 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !job.Acquire() {
+		writeError(w, http.StatusNotFound, "unknown job")
+		return
+	}
+	defer job.Release()
+
 	preview, _, _ := job.results()
 	s.serveFile(w, r, preview, "image/png", "preview.png")
 }
@@ -157,6 +170,15 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Claimed for the whole handler, because both the re-encode below and the
+	// transfer that follows it read out of the job directory, and retention
+	// must not delete it from underneath either of them.
+	if !job.Acquire() {
+		writeError(w, http.StatusNotFound, "unknown job")
+		return
+	}
+	defer job.Release()
+
 	_, master, name := job.results()
 	if master == "" {
 		writeError(w, http.StatusNotFound, "result not ready")
@@ -304,6 +326,13 @@ func (s *Server) handleStitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Claim the directory, so a sweep elsewhere can tell it has a live owner.
+	if err := writeMarker(dir); err != nil {
+		os.RemoveAll(dir)
+		writeError(w, http.StatusInternalServerError, "could not create a work directory")
+		return
+	}
+
 	images, fields, err := receiveUpload(reader, dir)
 	if err != nil {
 		os.RemoveAll(dir)
@@ -336,12 +365,35 @@ func (s *Server) handleStitch(w http.ResponseWriter, r *http.Request) {
 	job.cancel = cancel
 	s.jobs.Add(job)
 
+	s.running.Add(1)
 	go func() {
+		defer s.running.Done()
 		defer cancel()
 		s.pipeline.Run(jobCtx, job, images)
 	}()
 
 	writeJSON(w, http.StatusOK, map[string]string{"job_id": job.ID})
+}
+
+// Cleanup finishes tidying up after the HTTP server has stopped: it waits for
+// the pipeline goroutines to notice that the server context is cancelled, then
+// removes every job directory. Nothing can reach a job once the process is
+// exiting - job ids only ever live in memory - so keeping any of them would
+// leak the directory for good.
+func (s *Server) Cleanup(wait time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		s.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(wait):
+		// A tool that refuses to die cannot hold up the exit. Its directory
+		// is removed below either way; anything it writes afterwards is
+		// caught by the next run's sweep.
+	}
+	s.jobs.DiscardAll()
 }
 
 // receiveUpload streams each multipart part to disk and collects the form

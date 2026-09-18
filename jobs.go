@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"math"
+	"os"
 	"sync"
+	"time"
 )
 
 // Job state values reported to the browser.
@@ -50,6 +52,17 @@ type Job struct {
 	// encoding a large panorama takes a second or more, and status polls must
 	// not queue behind it.
 	convertMu sync.Mutex
+
+	// lastUsed is when the browser last asked about this job: a status poll,
+	// the preview, or a download. Retention is measured from it rather than
+	// from completion, so a result page someone is still using stays alive.
+	lastUsed time.Time
+	// inUse counts handlers currently reading the job directory. The
+	// directory is never removed while it is above zero.
+	inUse int
+	// removed is set once the job has been expired. It is set under mu before
+	// the directory goes, so no handler can start serving a condemned job.
+	removed bool
 
 	// Progress, updated as the pipeline runs.
 	state    string
@@ -163,6 +176,60 @@ func (j *Job) projName() string {
 	return projectionFriendly[j.projCode]
 }
 
+// touchLocked records that the job was just used. Callers already hold mu.
+func (j *Job) touchLocked() {
+	j.lastUsed = time.Now()
+}
+
+// Touch marks the job as still wanted, pushing back its expiry.
+func (j *Job) Touch() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.touchLocked()
+}
+
+// Acquire claims the job directory for the duration of one request, reporting
+// false if the job has already been expired. Every caller that reads or writes
+// inside Job.Dir must hold a claim, because expiry deletes the whole directory
+// and a download may be encoding or streaming out of it for many seconds.
+func (j *Job) Acquire() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.removed {
+		return false
+	}
+	j.inUse++
+	j.touchLocked()
+	return true
+}
+
+// Release gives up a claim taken by Acquire.
+func (j *Job) Release() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.inUse > 0 {
+		j.inUse--
+	}
+	j.touchLocked()
+}
+
+// expire marks a finished, unused and untouched job for deletion, reporting
+// whether the caller now owns its directory. Deciding under the same mutex
+// Acquire takes is what makes the delete safe: after this returns true no
+// handler can claim the job, and it only returns true when none holds it.
+func (j *Job) expire(now time.Time, ttl time.Duration) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.removed || j.inUse > 0 || j.state == StateRunning {
+		return false
+	}
+	if now.Sub(j.lastUsed) < ttl {
+		return false
+	}
+	j.removed = true
+	return true
+}
+
 // JobStore holds running and finished jobs for the lifetime of the process.
 type JobStore struct {
 	mu   sync.RWMutex
@@ -174,9 +241,67 @@ func NewJobStore() *JobStore {
 }
 
 func (s *JobStore) Add(j *Job) {
+	j.Touch()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.jobs[j.ID] = j
+}
+
+// Reap deletes the working directory of every job that has gone untouched for
+// ttl, and forgets the job itself so the store cannot grow without bound. A
+// ttl of zero disables expiry. It returns the directories it removed.
+func (s *JobStore) Reap(now time.Time, ttl time.Duration) []string {
+	if ttl <= 0 {
+		return nil
+	}
+	var removed []string
+	for _, j := range s.list() {
+		if !j.expire(now, ttl) {
+			continue
+		}
+		os.RemoveAll(j.Dir)
+		removed = append(removed, j.Dir)
+		s.mu.Lock()
+		delete(s.jobs, j.ID)
+		s.mu.Unlock()
+	}
+	return removed
+}
+
+// DiscardAll removes every job directory. It is called once the server has
+// stopped, where nothing can reach a job any more, so unlike Reap it does not
+// wait for a claim to be given up.
+func (s *JobStore) DiscardAll() {
+	for _, j := range s.list() {
+		j.mu.Lock()
+		j.removed = true
+		j.mu.Unlock()
+		os.RemoveAll(j.Dir)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jobs = make(map[string]*Job)
+}
+
+// Dirs returns the working directory of every job the store still holds.
+func (s *JobStore) Dirs() []string {
+	jobs := s.list()
+	dirs := make([]string, 0, len(jobs))
+	for _, j := range jobs {
+		dirs = append(dirs, j.Dir)
+	}
+	return dirs
+}
+
+// list snapshots the jobs so the store lock is not held across file removal.
+func (s *JobStore) list() []*Job {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	jobs := make([]*Job, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		jobs = append(jobs, j)
+	}
+	return jobs
 }
 
 func (s *JobStore) Get(id string) (*Job, bool) {

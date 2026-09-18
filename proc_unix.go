@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -82,4 +83,16 @@ func descendants(root int) []int {
 	}
 	walk(root)
 	return found
+}
+
+// processAlive reports whether a process id still exists. Signal 0 performs
+// the permission and existence checks without delivering anything, and a
+// process owned by another user answers EPERM rather than ESRCH, which still
+// means it is alive.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }

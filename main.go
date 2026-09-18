@@ -44,11 +44,16 @@ func run() error {
 		portFlag   = flag.Int("port", 0, "port to listen on (default 8765, or $PORT)")
 		staticFlag = flag.String("static", "", "serve the UI from this directory instead of the embedded copy")
 		huginFlag  = flag.String("hugin-dir", "", "directory holding the Hugin tools, if they are somewhere unusual (or $HUGIN_DIR)")
+		keepFlag   = flag.Duration("retention", 0, "how long to keep a finished stitch after the last time the page asked for it, e.g. 30m (default 2h, or $RETENTION; 0s keeps them until the server stops)")
 	)
 	flag.Usage = usage
 	flag.Parse()
 
 	port, err := resolvePort(*portFlag, flag.Args())
+	if err != nil {
+		return err
+	}
+	retention, err := resolveRetention(*keepFlag, flagPassed("retention"))
 	if err != nil {
 		return err
 	}
@@ -67,6 +72,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("could not load the UI: %w", err)
 	}
+
+	// Clear anything left behind by a run that was killed before it could
+	// tidy up. Directories belonging to another running server are left alone.
+	for _, dir := range sweepOrphans(os.TempDir(), time.Now(), orphanAge) {
+		fmt.Println("Removed leftover work directory " + dir)
+	}
+	go server.Retain(ctx, retention)
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	listener, err := net.Listen("tcp", addr)
@@ -100,7 +112,11 @@ func run() error {
 		fmt.Println("\nStopped.")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
+		err := httpServer.Shutdown(shutdownCtx)
+		// Shutdown only waits for HTTP handlers. The stitch itself runs on its
+		// own goroutine, so the work directories are cleared after it stops.
+		server.Cleanup(5 * time.Second)
+		return err
 	}
 }
 
@@ -125,6 +141,38 @@ func resolvePort(flagValue int, args []string) (int, error) {
 		return port, nil
 	}
 	return defaultPort, nil
+}
+
+// resolveRetention honours the -retention flag, then $RETENTION, then the
+// default. The flag is read as "was it given" rather than "is it non-zero",
+// so -retention 0s can ask for no expiry at all.
+func resolveRetention(flagValue time.Duration, given bool) (time.Duration, error) {
+	if given {
+		if flagValue < 0 {
+			return 0, fmt.Errorf("invalid retention %v", flagValue)
+		}
+		return flagValue, nil
+	}
+	if raw := os.Getenv("RETENTION"); raw != "" {
+		value, err := time.ParseDuration(raw)
+		if err != nil || value < 0 {
+			return 0, fmt.Errorf("invalid RETENTION %q", raw)
+		}
+		return value, nil
+	}
+	return DefaultRetention, nil
+}
+
+// flagPassed reports whether a flag was actually given on the command line,
+// which a zero value cannot tell us on its own.
+func flagPassed(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 // huginDirs returns the directories named by the -hugin-dir flag or the

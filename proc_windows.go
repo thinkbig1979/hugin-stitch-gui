@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"strconv"
 )
@@ -22,4 +23,19 @@ func useProcessGroup(cmd *exec.Cmd) {
 		}
 		return nil
 	}
+}
+
+// processAlive reports whether a process id still exists. On Windows
+// os.FindProcess opens a handle to the process and fails when there is none,
+// unlike on Unix where it always succeeds.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	_ = p.Release()
+	return true
 }

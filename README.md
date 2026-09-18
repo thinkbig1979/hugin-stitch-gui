@@ -44,6 +44,10 @@ is done by the Hugin binaries already installed on the system.
   stitched panorama (via `exiftool` when installed), and uses it to name the
   download file
 - Uploads stream straight to disk, so a multi-gigabyte drop never has to fit in memory
+- Cleans up after itself: a finished stitch is kept for a couple of hours after
+  you last looked at it and then deleted, work left behind by a killed run is
+  swept at startup, and nothing survives Ctrl+C
+  (see [Temporary files](#temporary-files))
 - Finds the Hugin tools wherever the platform's installer put them, without
   needing them on `PATH`, and says what to install when they are missing
 
@@ -150,6 +154,8 @@ Open the URL, drop images in, click **Stitch panorama**.
 not given. `-hugin-dir <dir>` (or `HUGIN_DIR`) points at a Hugin install the
 app did not find on its own. `-static <dir>` serves the UI from a directory
 instead of the embedded copy, which is convenient while editing the frontend.
+`-retention <duration>` (or `RETENTION`) changes how long a finished stitch is
+kept; see [Temporary files](#temporary-files).
 
 ## Testing
 
@@ -257,6 +263,42 @@ floating point data that only the stitch itself produces, and nothing in a
 finished 8-bit panorama can reconstruct it. Selecting one after a stitch says
 so and offers to stitch again.
 
+## Temporary files
+
+Each stitch gets its own directory under the system temp directory, named
+`hugin_*`. It holds the uploaded frames, the Hugin projects, the finished
+panorama, its preview, and any encoded download. A finished two-frame job is
+around 40 MB; a RAW shoot is a great deal more. On Linux `/tmp` is usually
+tmpfs, which means every one of those bytes is resident memory until the
+directory goes away, so the app does not leave them lying around.
+
+Three things clear up, and between them nothing is left behind by a normal run:
+
+- **Finished jobs expire.** Two hours after the last time the page asked for
+  something - a status poll, the preview, or a download - the job's directory is
+  deleted and the job is forgotten. The clock runs from the last request rather
+  than from when the stitch finished, so a result page you are still using never
+  expires under you, and a server left running overnight does not hold on to
+  yesterday's panoramas. Afterwards the job id is unknown and the page has to
+  stitch again. `-retention 30m` shortens it, `RETENTION=6h` lengthens it, and
+  `-retention 0s` keeps every job until the server stops.
+- **Intermediates go as soon as the stitch succeeds.** The uploaded frames, the
+  copies made of them (a demosaiced RAW is much larger than the file it came
+  from) and the `.pto` projects are all deleted at that point. The panorama, its
+  preview and the encoded downloads stay, which is everything a finished result
+  page needs, including switching format afterwards.
+- **Leftovers are swept at startup.** A run that was killed cannot tidy up after
+  itself, so the next start removes what it left. Running two servers at once is
+  supported and the sweep will not touch the other one's work: every job
+  directory records the process id that owns it, and a directory whose owner is
+  still running is kept no matter how old it looks. Only a directory whose owner
+  has gone is removed, along with an unclaimed one - from a crash before the
+  directory was claimed - that nothing has written to for an hour.
+
+Stopping the server with Ctrl+C also removes every job directory, whatever the
+retention setting: job ids only ever live in memory, so a directory that
+outlives the process can never be reached again.
+
 ## HTTP interface
 
 | Method | Path             | Purpose                                      |
@@ -280,9 +322,13 @@ extension always comes from the format being served, never from the supplied
 name.
 
 `/status` reports `running`, `done`, `error` or `cancelled`. Cancelling kills
-the tool and everything it started, then deletes the job's working directory,
-so a stopped stitch leaves nothing behind. On Windows only the tool itself is
-killed, so a `nona` or `enblend` helper may run on briefly.
+the tool and everything it started - by walking the process tree on Unix, and
+with `taskkill /T` on Windows - then deletes the job's working directory, so a
+stopped stitch leaves nothing behind.
+
+Every endpoint that names a job answers 404 once that job has expired, which is
+what the browser sees if it comes back to a result page long after the stitch
+(see [Temporary files](#temporary-files)).
 
 Uploads are capped at 4 GB per request. Jobs run in a background goroutine and write to a
 temporary directory per job.
@@ -293,7 +339,7 @@ temporary directory per job.
 main.go             flags, startup, graceful shutdown
 server.go           HTTP handlers, streaming uploads, embedded UI
 pipeline.go         the Hugin pipeline, phases, progress parsing
-jobs.go             job store and its concurrency guards
+jobs.go             job store, its concurrency guards and job expiry
 pto.go              Hugin project parsing and auto projection choice
 rotation.go         manual yaw/pitch/roll nudge
 formats.go          output formats and projection codes
@@ -301,8 +347,9 @@ images.go           preview rendering and RAW decoding
 exif.go             metadata transfer via ExifTool
 naming.go           filename sanitising for uploads and downloads
 convert.go          encoding the finished panorama on download
-proc_unix.go        process-group teardown so cancelling kills the tool tree
-proc_windows.go     the Windows no-op equivalent
+cleanup.go          retention, the startup sweep, and pruning intermediates
+proc_unix.go        process-tree teardown so cancelling kills the whole tool tree
+proc_windows.go     the same on Windows, via taskkill
 toolchain.go        finding the Hugin tools, and per-platform install advice
 *_test.go           unit tests for the pipeline, parsing and HTTP surface
 Dockerfile          container image with the full toolchain
