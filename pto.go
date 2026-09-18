@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -179,4 +180,71 @@ func resolveProjection(ptoPath, projection string) string {
 	default: // near-360
 		return projEquirectangular
 	}
+}
+
+// ptoName pulls the quoted file name out of an "i" line.
+//
+// The name is read by locating its quotes rather than by splitting the line on
+// whitespace, because a file name may contain spaces. Hugin writes "n" last,
+// so the closing quote is the final one on the line.
+func ptoName(line string) (string, bool) {
+	start := strings.Index(line, ` n"`)
+	if start < 0 {
+		return "", false
+	}
+	rest := line[start+3:]
+	end := strings.LastIndex(rest, `"`)
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// ptoImageNames reads the file names recorded on the "i" lines of a Hugin
+// project file, in the order Hugin stored them.
+func ptoImageNames(ptoPath string) ([]string, error) {
+	f, err := os.Open(ptoPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var names []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "i ") {
+			continue
+		}
+		if name, ok := ptoName(line); ok {
+			names = append(names, name)
+		}
+	}
+	return names, scanner.Err()
+}
+
+// missingFromPTO reports which of sources never reached the project file.
+//
+// pto_gen ignores an input it cannot read and still exits 0, so a source that
+// is absent here was dropped rather than stitched. Comparison is by base name:
+// Hugin records the path it was handed, which need not match ours character
+// for character, and a job's upload names are already unique.
+func missingFromPTO(ptoPath string, sources []string) ([]string, error) {
+	names, err := ptoImageNames(ptoPath)
+	if err != nil {
+		return nil, err
+	}
+	present := make(map[string]bool, len(names))
+	for _, name := range names {
+		present[filepath.Base(strings.ReplaceAll(name, `\`, "/"))] = true
+	}
+
+	var missing []string
+	for _, src := range sources {
+		if !present[filepath.Base(src)] {
+			missing = append(missing, src)
+		}
+	}
+	return missing, nil
 }

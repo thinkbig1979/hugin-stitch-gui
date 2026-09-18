@@ -69,11 +69,7 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 		return
 	}
 	if len(sources) < 2 {
-		msg := "Need at least 2 readable images."
-		if len(unreadable) > 0 {
-			msg += " Unreadable: " + strings.Join(unreadable, "; ")
-		}
-		job.fail(msg)
+		job.fail(tooFewMessage(unreadable))
 		return
 	}
 
@@ -95,6 +91,29 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 
 	if !step(1, "pto_gen", append([]string{"-o", path("project.pto")}, sources...)) {
 		return
+	}
+
+	// pto_gen exits 0 even when it could not read one of its inputs, so check
+	// that every source reached the project instead of trusting the status.
+	// A file dropped here would otherwise be stitched around silently, leaving
+	// a panorama quietly missing a frame.
+	if dropped, err := missingFromPTO(path("project.pto"), sources); err == nil && len(dropped) > 0 {
+		gone := make(map[string]bool, len(dropped))
+		for _, src := range dropped {
+			gone[src] = true
+			unreadable = append(unreadable, filepath.Base(src)+": not readable by Hugin")
+		}
+		kept := make([]string, 0, len(sources))
+		for _, src := range sources {
+			if !gone[src] {
+				kept = append(kept, src)
+			}
+		}
+		sources = kept
+		if len(sources) < 2 {
+			job.fail(tooFewMessage(unreadable))
+			return
+		}
 	}
 	if !step(2, "cpfind", []string{"-o", path("cp.pto"), path("project.pto")}) {
 		return
@@ -480,4 +499,14 @@ func firstNonEmpty(dir, name string) string {
 		return path
 	}
 	return ""
+}
+
+// tooFewMessage explains a job that ran out of usable inputs, naming whatever
+// was rejected so the user knows which files to convert.
+func tooFewMessage(unreadable []string) string {
+	msg := "Need at least 2 readable images."
+	if len(unreadable) > 0 {
+		msg += " Unreadable: " + strings.Join(unreadable, "; ")
+	}
+	return msg
 }
