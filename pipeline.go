@@ -116,7 +116,9 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 	}
 	job.setProgress(phases[phaseOptimise].end, caption)
 
-	_, format := lookupFormat(job.Format)
+	_, requested := lookupFormat(job.Format)
+	// LDR jobs stitch to a lossless master and are encoded on download.
+	format := masterFor(requested)
 	modifyArgs := []string{"--projection=" + projCode}
 	// The nudge has to be applied before the AUTO sizing options, so the
 	// field of view, crop and canvas are all measured around the rotated
@@ -126,9 +128,6 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 	}
 	modifyArgs = append(modifyArgs, "--fov=AUTO", "--crop=AUTO", "--canvas=AUTO")
 	modifyArgs = append(modifyArgs, format.Args...)
-	if format.Quality {
-		modifyArgs = append(modifyArgs, "--ldr-compression="+strconv.Itoa(job.Quality))
-	}
 	modifyArgs = append(modifyArgs, "-o", path("pp.pto"), optPTO)
 	if !step(phaseModify, "pano_modify", modifyArgs) {
 		return
@@ -153,15 +152,26 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 	preview := makePreview(previewSource, dir)
 
 	var dateTime string
-	if format.EXIF {
+	if requested.EXIF {
 		dateTime = copyEXIF(ctx, p.tools, uploaded[0], output, job)
 	}
 
-	downloadName := makeDownloadName(uploaded[0], dateTime, format.Ext)
+	downloadName := makeDownloadName(uploaded[0], dateTime, requested.Ext)
 	if job.Filename != "" {
-		downloadName = cleanDownloadName(job.Filename, format.Ext)
+		downloadName = cleanDownloadName(job.Filename, requested.Ext)
 	}
 	job.setResult(preview, output, downloadName)
+
+	// Encode the format that was asked for now, while the user is still
+	// looking at the preview, so the download itself is immediate. Other
+	// formats are encoded on demand when the selector is changed.
+	if requested.Convertible() {
+		job.setProgress(phases[phaseStitch].end, "Preparing "+requested.Label+" download...")
+		if _, err := encodeTo(output, dir, job.Format, job.Quality); err != nil {
+			// Not fatal: the download path will try again and report properly.
+			job.pushLine("could not pre-encode the " + requested.Label + " download: " + err.Error())
+		}
+	}
 
 	message := "Stitch complete"
 	if name := projectionFriendly[projCode]; name != "" {

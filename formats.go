@@ -25,6 +25,25 @@ type Format struct {
 // DefaultFormat is used when the client sends nothing or sends an unknown key.
 const DefaultFormat = "tif"
 
+// MasterFormat is what every LDR stitch actually produces. The chosen format
+// is then applied when the panorama is downloaded, which makes format and JPEG
+// quality decisions that can be changed afterwards without re-stitching and
+// without ever compressing an already lossy image a second time.
+const MasterFormat = "tif"
+
+// Convertible reports whether this format can be produced by re-encoding a
+// finished panorama. HDR output carries 32-bit floating point data that only
+// the stitch itself produces, so it has to be chosen beforehand.
+func (f Format) Convertible() bool { return !f.HDR }
+
+// masterFor returns the format the pipeline should actually stitch to.
+func masterFor(f Format) Format {
+	if f.HDR {
+		return f
+	}
+	return formats[MasterFormat]
+}
+
 var formats = map[string]Format{
 	"tif": {
 		Label: "TIFF", Ext: ".tif", MIME: "image/tiff",

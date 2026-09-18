@@ -24,6 +24,7 @@ const progressWrap = document.getElementById("progress-wrap");
 const progressFill = document.getElementById("progress-fill");
 const progressMsg = document.getElementById("progress-msg");
 const cancelBtn = document.getElementById("cancel-btn");
+const downloadNote = document.getElementById("download-note");
 const setupBanner = document.getElementById("setup");
 const setupMissing = document.getElementById("setup-missing");
 const setupPlatform = document.getElementById("setup-platform");
@@ -37,6 +38,7 @@ let files = [];
 let stitching = false;
 let currentJob = null;
 let cancelling = false;
+let stitchedFormat = null;
 
 const PROJ_HINTS = {
   auto: "Auto measures the final field of view and picks the projection: rectilinear for moderate sweeps, cylindrical for wide-but-far-from-360\u00b0, equirectangular near 360\u00b0.",
@@ -48,18 +50,24 @@ const PROJ_HINTS = {
 const FORMAT_LABELS = { tif: "TIFF", png: "PNG", jpg: "JPEG", tif_hdr: "HDR TIFF", exr: "EXR" };
 
 const FORMAT_HINTS = {
-  tif: "8-bit RGBA, LZW (lossless). Best all-round choice for display and printing: pixel-exact, compact, and readable everywhere.",
-  png: "8-bit RGBA, Deflate (lossless). Universally supported and pixel-exact, but the files are larger than TIFF at equal quality.",
-  jpg: "8-bit RGB, lossy DCT compression. Smallest files, fine for sharing \u2014 but colours, gradients and fine detail degrade (quality slider above).",
-  tif_hdr: "Linear, scene-referred 32-bit float. Keeps the full precision and range of the stitch with no tone mapping \u2014 the archive choice for further editing. Large files, and normal image viewers may not open it.",
-  exr: "OpenEXR, 32-bit float, PIZ (lossless). The standard interchange format for HDR, VFX and 3D pipelines. Same precision as HDR TIFF; browsers can\u2019t show it, so the preview below is a separate JPEG.",
+  tif: "8-bit RGBA, LZW (lossless), exactly as the blender wrote it. Best all-round choice for display and printing: pixel-exact, compact, and readable everywhere.",
+  png: "8-bit RGBA, Deflate (lossless), re-encoded from the TIFF. Universally supported and pixel-exact, but the files are larger than TIFF at equal quality.",
+  jpg: "8-bit RGB, lossy DCT compression, re-encoded from the lossless TIFF so the quality slider always works from the original pixels. Smallest files, fine for sharing \u2014 but colours, gradients and fine detail degrade.",
+  tif_hdr: "Linear, scene-referred 32-bit float. Keeps the full precision and range of the stitch with no tone mapping \u2014 the archive choice for further editing. Large files, and normal image viewers may not open it. Must be chosen before stitching.",
+  exr: "OpenEXR, 32-bit float, PIZ (lossless). The standard interchange format for HDR, VFX and 3D pipelines. Same precision as HDR TIFF; browsers can\u2019t show it, so the preview below is a separate JPEG. Must be chosen before stitching.",
 };
+
+// HDR output carries floating point data that only the stitch produces, so it
+// cannot be re-encoded from a finished panorama the way the others can.
+const HDR_FORMATS = new Set(["tif_hdr", "exr"]);
 
 const formatHint = document.getElementById("format-hint");
 
 function updateFormatControls() {
   qualityWrap.classList.toggle("hidden", formatSelect.value !== "jpg");
   formatHint.textContent = FORMAT_HINTS[formatSelect.value] || "";
+  updateDownloadLabel();
+  refreshDownloadHref();
 }
 
 function updateDownloadLabel() {
@@ -72,8 +80,31 @@ function updateDownloadLabel() {
 function refreshDownloadHref() {
   const base = downloadLink.dataset.base;
   if (!base) return;
+
+  const wanted = formatSelect.value;
+  // Switching to an HDR format after the fact needs another stitch, because
+  // the floating point data was never produced.
+  const needsRestitch =
+    HDR_FORMATS.has(wanted) && wanted !== stitchedFormat;
+
+  downloadLink.classList.toggle("disabled", needsRestitch);
+  downloadNote.textContent = needsRestitch
+    ? `${FORMAT_LABELS[wanted]} has to be produced by the stitch itself. Press Stitch panorama again to get it.`
+    : "";
+  if (needsRestitch) {
+    downloadLink.removeAttribute("href");
+    return;
+  }
+
+  const params = new URLSearchParams();
   const name = outputNameInput.value.trim();
-  downloadLink.href = name ? `${base}?name=${encodeURIComponent(name)}` : base;
+  if (name) params.set("name", name);
+  if (!HDR_FORMATS.has(stitchedFormat)) {
+    params.set("format", wanted);
+    if (wanted === "jpg") params.set("quality", String(qualityInput.value));
+  }
+  const query = params.toString();
+  downloadLink.href = query ? `${base}?${query}` : base;
 }
 
 function show(el) { el.classList.remove("hidden"); }
@@ -223,6 +254,7 @@ stitchBtn.addEventListener("click", async () => {
   }
 
   currentJob = jobId;
+  stitchedFormat = formatSelect.value;
   show(cancelBtn);
   poll(jobId);
 });
@@ -365,6 +397,7 @@ updateProjHint();
 formatSelect.addEventListener("change", updateFormatControls);
 qualityInput.addEventListener("input", () => {
   qualityValue.textContent = qualityInput.value;
+  refreshDownloadHref();
 });
 updateFormatControls();
 checkToolchain();

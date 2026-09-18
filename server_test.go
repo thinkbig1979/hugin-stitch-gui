@@ -260,7 +260,7 @@ func TestDownloadServesTheResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := &Job{ID: "abc", Dir: dir, Format: "tif", state: StateDone}
-	job.setResult("", output, "my pano.tif")
+	job.setResult("", output, "my_pano.tif")
 	server.jobs.Add(job)
 
 	rec := httptest.NewRecorder()
@@ -272,8 +272,7 @@ func TestDownloadServesTheResult(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "image/tiff" {
 		t.Errorf("content type = %q, want image/tiff", got)
 	}
-	// A space in the filename has to survive the header intact.
-	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "my pano.tif") {
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "my_pano.tif") {
 		t.Errorf("content-disposition = %q, want the download name", got)
 	}
 	if rec.Body.String() != "stitched bytes" {

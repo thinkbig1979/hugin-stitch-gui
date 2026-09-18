@@ -166,6 +166,11 @@ section { margin-top: 32px; }
 .check > span { display: flex; flex-direction: column; gap: 2px; }
 .check .check-label { font-size: .92rem; }
 .check .hint { margin: 0; max-width: 62ch; }
+.ghost.disabled {
+  opacity: .45;
+  pointer-events: none;
+  cursor: default;
+}
 .setup {
   margin-bottom: 22px;
   padding: 16px 18px;

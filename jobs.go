@@ -46,6 +46,11 @@ type Job struct {
 	// once the job has finished.
 	cancel context.CancelFunc
 
+	// convertMu serialises download-time encoding. It is deliberately not mu:
+	// encoding a large panorama takes a second or more, and status polls must
+	// not queue behind it.
+	convertMu sync.Mutex
+
 	// Progress, updated as the pipeline runs.
 	state    string
 	progress float64

@@ -30,9 +30,11 @@ is done by the Hugin binaries already installed on the system.
 - Lens distortion is solved from the control points as part of alignment
 - Live progress with per-phase weighting (cpfind and blending dominate the wall clock)
 - PNG preview in the browser; output format selectable from all the formats
-  Hugin supports, each explained in the UI before you commit: TIFF (8-bit
-  lossless), PNG (8-bit lossless), JPEG (lossy, with a quality slider), HDR
-  TIFF (32-bit float linear), or OpenEXR (32-bit float linear)
+  Hugin supports, each explained in the UI: TIFF (8-bit lossless), PNG (8-bit
+  lossless), JPEG (lossy, with a quality slider), HDR TIFF (32-bit float
+  linear), or OpenEXR (32-bit float linear)
+- Format and JPEG quality can be changed after the stitch, without re-stitching
+  (see [Output formats](#output-formats))
 - Optional custom output filename, read when you click Download rather than
   when the stitch started, so a late rename still takes effect (the app falls
   back to a timestamp- or first-frame-derived name otherwise)
@@ -185,7 +187,7 @@ cpclean        drop control points whose alignment error is an outlier
 autooptimiser  solve for camera positions and lens distortion (-a), level the
                horizon (-l), and match exposure and vignetting (-m)
 pano_modify    apply any manual rotation, then set projection, field of view,
-               crop, canvas, output type/quality
+               crop, canvas and output type
 hugin_executor remap with nona, blend with enblend into the chosen format
 ```
 
@@ -226,6 +228,35 @@ the overlaps instead of trusting each frame's EXIF. On a five-frame test set it
 narrowed a 2.08 EV spread to under 1 EV and recovered a vignetting coefficient
 that was otherwise left at zero. It costs about a second.
 
+## Output formats
+
+Every LDR stitch produces a lossless TIFF, whatever format was asked for, and
+the chosen format is applied when the panorama is downloaded. So format and
+JPEG quality are presentation choices that can be changed after the fact: pick
+a different one and the download follows, in about a second for a typical
+panorama. Because every encode starts from the lossless master, a JPEG is never
+made by recompressing another JPEG, no matter how many times you change your
+mind.
+
+What each download actually contains:
+
+| Format | Produced by | Details |
+|--------|-------------|---------|
+| TIFF | the blender, served unchanged | 8-bit RGBA, LZW, with an unassociated alpha channel |
+| PNG | re-encoded from the TIFF | 8-bit RGBA, Deflate |
+| JPEG | re-encoded from the TIFF | 8-bit RGB, flattened onto black where the crop left it transparent |
+
+A TIFF download is the blender's own file, byte for byte. It is not re-written,
+which is deliberate: Go's TIFF writer accepts an LZW option but does not
+implement it, tagging the output LZW while writing it uncompressed, so the
+result cannot be read back. Anything this app does write as TIFF uses Deflate
+instead.
+
+**HDR TIFF and OpenEXR have to be chosen before stitching.** They carry 32-bit
+floating point data that only the stitch itself produces, and nothing in a
+finished 8-bit panorama can reconstruct it. Selecting one after a stitch says
+so and offers to stitch again.
+
 ## HTTP interface
 
 | Method | Path             | Purpose                                      |
@@ -234,16 +265,19 @@ that was otherwise left at zero. It costs about a second.
 | GET    | `/status/<id>`   | Job state, progress fraction, current phase message |
 | POST   | `/cancel/<id>`   | Stop a running stitch; 409 if it already finished |
 | GET    | `/result/<id>`   | PNG preview of the finished panorama         |
-| GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, PNG, JPEG, HDR TIFF, or EXR); `?name=` overrides the filename |
+| GET    | `/download/<id>` | Stitched panorama; `?format=`, `?quality=` and `?name=` choose the encoding and filename at download time |
 | GET    | `/health`        | Toolchain report: what was found, what is missing, where it looked, and how to install the rest on this platform (POST also accepted) |
 
 `level` and `photometric` accept `0`/`false`/`off`/`no` to disable that
 correction; any other value, including omitting the field, leaves it on.
 `yaw`, `pitch` and `roll` are degrees, default `0`, clamped to ±180.
 
-`/download` takes an optional `name` query parameter, which overrides the name
-chosen when the job finished. The extension always comes from the format that
-was actually stitched, never from the supplied name.
+`/download` takes optional `format`, `quality` and `name` query parameters,
+applied when the link is followed rather than when the stitch started, so all
+three can be changed after the panorama is ready. `format` must be one of the
+LDR formats; asking for an HDR format that was not stitched returns 400. The
+extension always comes from the format being served, never from the supplied
+name.
 
 `/status` reports `running`, `done`, `error` or `cancelled`. Cancelling kills
 the tool and everything it started, then deletes the job's working directory,
@@ -266,6 +300,7 @@ formats.go          output formats and projection codes
 images.go           preview rendering and RAW decoding
 exif.go             metadata transfer via ExifTool
 naming.go           filename sanitising for uploads and downloads
+convert.go          encoding the finished panorama on download
 proc_unix.go        process-group teardown so cancelling kills the tool tree
 proc_windows.go     the Windows no-op equivalent
 toolchain.go        finding the Hugin tools, and per-platform install advice

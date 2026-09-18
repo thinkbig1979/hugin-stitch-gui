@@ -157,18 +157,67 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, download, name := job.results()
-	_, format := lookupFormat(job.Format)
+	_, master, name := job.results()
+	if master == "" {
+		writeError(w, http.StatusNotFound, "result not ready")
+		return
+	}
+
+	query := r.URL.Query()
+
+	// The format is chosen here rather than when the stitch started, so it can
+	// be changed afterwards. It defaults to whatever the job asked for.
+	key, format := lookupFormat(job.Format)
+	if wanted := strings.TrimSpace(query.Get("format")); wanted != "" {
+		if _, ok := formats[wanted]; !ok {
+			writeError(w, http.StatusBadRequest, "unknown format")
+			return
+		}
+		key, format = lookupFormat(wanted)
+	}
+
+	// An HDR panorama was stitched as floating point and cannot be re-encoded
+	// from the finished file; asking for one needs a new stitch.
+	_, stitched := lookupFormat(job.Format)
+	if format.HDR && key != job.Format {
+		writeError(w, http.StatusBadRequest,
+			format.Label+" has to be chosen before stitching; stitch again to get it.")
+		return
+	}
+	if stitched.HDR && !format.HDR {
+		// Serve the float output the job actually produced.
+		key, format = lookupFormat(job.Format)
+	}
+
+	quality := job.Quality
+	if raw := query.Get("quality"); raw != "" {
+		quality = parseQuality(raw)
+	}
+
+	path := master
+	if format.Convertible() {
+		job.convertMu.Lock()
+		converted, err := encodeTo(master, job.Dir, key, quality)
+		job.convertMu.Unlock()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		path = converted
+	}
+
 	// A name in the query wins, so editing the filename after the stitch has
 	// finished still renames the download. The extension always comes from the
-	// format that was actually stitched, never from what the user typed.
-	if requested := strings.TrimSpace(r.URL.Query().Get("name")); requested != "" {
+	// format being served, never from what the user typed.
+	if requested := strings.TrimSpace(query.Get("name")); requested != "" {
 		name = cleanDownloadName(requested, format.Ext)
+	} else {
+		name = cleanDownloadName(name, format.Ext)
 	}
 	if name == "" {
 		name = "stitched" + format.Ext
 	}
-	s.serveFile(w, r, download, format.MIME, name)
+	s.serveFile(w, r, path, format.MIME, name)
 }
 
 // serveFile sends a finished job artefact as an attachment.
