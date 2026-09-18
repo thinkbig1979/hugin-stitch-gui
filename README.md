@@ -164,6 +164,9 @@ go test ./...
 go test -race ./...
 ```
 
+The tests drive a stand-in toolchain, so they pass on a machine with no Hugin
+installed and never shell out to a stitcher.
+
 ## Running with Docker
 
 Build an image that bundles the app plus the Hugin toolchain, ExifTool and
@@ -175,9 +178,11 @@ docker run --rm -p 8765:8765 hugin-stitch-gui
 ```
 
 Open http://localhost:8765. Inside the container the server binds to
-`0.0.0.0` (set `HOST`/`PORT` env vars to override). Stitch output is served
-over HTTP and scratch files live in the container's temp dir, so no volume is
-required; mount one under it if you want outputs on the host.
+`0.0.0.0` (set `HOST`/`PORT` env vars to override, and `RETENTION` to change
+how long finished stitches are kept). Stitch output is served over HTTP and
+scratch files live in the container's temp dir, where they are cleaned up on
+the same schedule as anywhere else, so no volume is required; mount one under
+it if you want outputs on the host.
 
 Note that containers generally don't expose GPUs, so `enblend` falls back to
 CPU blending unless you pass `--device /dev/dri` (or `--gpus all` with the
