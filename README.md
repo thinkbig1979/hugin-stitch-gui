@@ -13,7 +13,7 @@ is done by the Hugin binaries already installed on the system.
 ## What it does
 
 - Drag-and-drop queue with thumbnails, drag-to-reorder, and per-image removal
-- Accepts JPEG, PNG, BMP, TIFF, WebP, HEIC, and RAW (CR2, CR3, NEF, ARW, DNG)
+- Accepts JPEG, PNG, BMP, TIFF, WebP, HEIC/HEIF, and RAW (CR2, CR3, NEF, ARW, DNG)
 - Projection choice: auto, rectilinear, cylindrical, or equirectangular
 - Auto mode measures the horizontal field of view from the optimised project and picks
   rectilinear up to 100°, cylindrical up to 240°, equirectangular beyond that
@@ -76,19 +76,21 @@ waiting for a stitch to fail.
 ```bash
 brew install --cask hugin          # or the disk image from the link below
 brew install libraw exiftool       # optional: RAW decoding and metadata
+# HEIC needs nothing extra: macOS ships sips, which decodes it.
 ```
 
 **Windows**
 
 Run the Hugin `.msi` installer. An install under `Program Files` is found
-automatically. For RAW files and metadata, install LibRaw and ExifTool.
+automatically. For RAW files and metadata, install LibRaw and ExifTool. For
+HEIC, install ImageMagick with HEIC support and put it on PATH.
 
 **Linux**
 
 ```bash
-sudo apt install hugin-tools enblend libimage-exiftool-perl libraw-bin   # Debian/Ubuntu
-sudo dnf install hugin enblend perl-Image-ExifTool LibRaw-tools          # Fedora
-sudo pacman -S hugin enblend-enfuse perl-image-exiftool libraw           # Arch
+sudo apt install hugin-tools enblend libimage-exiftool-perl libraw-bin libheif-examples  # Debian/Ubuntu
+sudo dnf install hugin enblend perl-Image-ExifTool LibRaw-tools libheif-tools            # Fedora
+sudo pacman -S hugin enblend-enfuse perl-image-exiftool libraw libheif                   # Arch
 ```
 
 Downloads for every platform: <https://hugin.sourceforge.io/download/>
@@ -116,6 +118,15 @@ None of these are required; each one is skipped cleanly when absent.
 - A RAW decoder is needed for CR2/CR3/NEF/ARW/DNG uploads. The app uses the
   first of `dcraw_emu` (from LibRaw), `dcraw` or `darktable-cli` it finds.
   Without one, RAW files are skipped and every other format is unaffected.
+- A HEIF decoder is needed for HEIC/HEIF uploads, which is what an iPhone
+  shoots by default. The app uses the first of `sips` (built into macOS),
+  `heif-convert` (from libheif) or ImageMagick it finds. ImageMagick is only
+  used when its build actually carries the HEIC delegate, since it is often
+  installed without one. Without any of them, HEIC files are skipped and every
+  other format is unaffected.
+- Decoded files are written as 8-bit, because Hugin will not blend a 16-bit
+  image with the 8-bit JPEGs it is usually stitched beside. `/health` reports
+  which decoder was picked for each format family.
 
 The only build-time dependency is the Go toolchain.
 
@@ -348,7 +359,7 @@ jobs.go             job store, its concurrency guards and job expiry
 pto.go              Hugin project parsing and auto projection choice
 rotation.go         manual yaw/pitch/roll nudge
 formats.go          output formats and projection codes
-images.go           preview rendering and RAW decoding
+images.go           preview rendering and RAW/HEIC decoding
 exif.go             metadata transfer via ExifTool
 naming.go           filename sanitising for uploads and downloads
 convert.go          encoding the finished panorama on download

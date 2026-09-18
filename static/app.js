@@ -30,6 +30,7 @@ const setupMissing = document.getElementById("setup-missing");
 const setupPlatform = document.getElementById("setup-platform");
 const setupSteps = document.getElementById("setup-steps");
 const setupLink = document.getElementById("setup-link");
+const decoderNote = document.getElementById("decoder-note");
 const resultWrap = document.getElementById("result-wrap");
 const resultImg = document.getElementById("result-img");
 const downloadLink = document.getElementById("download-link");
@@ -155,11 +156,65 @@ function makeThumb(entry, i) {
   return li;
 }
 
+// Formats the server has no decoder for. Filled in from /health so the page
+// stops offering something this machine cannot read, rather than accepting the
+// file and failing once the stitch is already under way.
+const undecodable = new Set();
+
+const DECODER_FAMILIES = [
+  { family: "heif", label: "HEIC", exts: [".heic", ".heif"] },
+  { family: "raw", label: "RAW", exts: [".cr2", ".cr3", ".nef", ".arw", ".dng"] },
+];
+
+function applyDecoders(decoders) {
+  undecodable.clear();
+  const missing = [];
+  for (const { family, label, exts } of DECODER_FAMILIES) {
+    if (decoders && decoders[family]) continue;
+    for (const ext of exts) undecodable.add(ext);
+    missing.push(label);
+  }
+
+  // Keep the file picker's own list in step with what the server can read.
+  fileInput.accept = fileInput.accept
+    .split(",")
+    .filter((entry) => !undecodable.has(entry.trim().toLowerCase()))
+    .join(",");
+
+  if (missing.length) {
+    decoderNote.textContent =
+      `${missing.join(" and ")} files need a decoder that is not installed here, ` +
+      "so they are not accepted.";
+    show(decoderNote);
+  } else {
+    hide(decoderNote);
+  }
+}
+
+function extensionOf(name) {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot).toLowerCase();
+}
+
 function addFiles(list) {
-  const valid = Array.from(list).filter((f) => f.type.startsWith("image/") ||
-    /\.(jpe?g|png|bmp|tiff?|webp|cr2|cr3|nef|arw|dng|heic)$/i.test(f.name));
+  const rejected = [];
+  const valid = Array.from(list).filter((f) => {
+    // Check this before the MIME test: a HEIC reports "image/heic", so a
+    // format the server cannot decode would otherwise slip through.
+    if (undecodable.has(extensionOf(f.name))) {
+      rejected.push(f.name);
+      return false;
+    }
+    return f.type.startsWith("image/") ||
+      /\.(jpe?g|png|bmp|tiff?|webp|cr2|cr3|nef|arw|dng|heic|heif)$/i.test(f.name);
+  });
   for (const f of valid) {
     files.push({ file: f, url: URL.createObjectURL(f) });
+  }
+  if (rejected.length) {
+    decoderNote.textContent =
+      `Skipped ${rejected.join(", ")}: no decoder for that format is installed here.`;
+    show(decoderNote);
   }
   refreshQueue();
 }
@@ -355,6 +410,8 @@ async function checkToolchain() {
   } catch (err) {
     return; // the server is the thing that is unreachable; nothing to advise
   }
+  applyDecoders(health && health.decoders);
+
   if (!health || health.engine_ready) {
     hide(setupBanner);
     return;

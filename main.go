@@ -205,6 +205,9 @@ func reportToolchain(tools Toolchain) {
 	if tools.RawConverter == "" {
 		fmt.Fprintln(os.Stderr, "Note: no RAW decoder found, so CR2/CR3/NEF/ARW/DNG uploads will be skipped.")
 	}
+	if tools.DecoderFor(familyHEIF) == "" {
+		fmt.Fprintln(os.Stderr, "Note: no HEIC decoder found, so HEIC/HEIF uploads will be skipped.")
+	}
 	if !tools.Has("exiftool") {
 		fmt.Fprintln(os.Stderr, "Note: exiftool not found, so panoramas will not keep their capture time.")
 	}

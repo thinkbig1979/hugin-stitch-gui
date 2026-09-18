@@ -26,7 +26,7 @@
     </section>
 
     <section id="drop-zone" tabindex="0" role="button" aria-label="Drop zone">
-      <input type="file" id="file-input" accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.heic" multiple hidden>
+      <input type="file" id="file-input" accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.heic,.heif" multiple hidden>
       <div class="dz-inner">
         <svg class="dz-icon" viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -35,6 +35,7 @@
         </svg>
         <p><strong>Drag &amp; drop images here</strong></p>
         <p class="hint">or click to browse · JPEG / PNG / TIFF / Canon&nbsp;RAW</p>
+        <p class="hint hidden" id="decoder-note"></p>
       </div>
     </section>
 

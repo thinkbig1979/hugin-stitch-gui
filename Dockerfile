@@ -13,12 +13,14 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/hugin-stitch-gui .
 
 FROM debian:bookworm-slim
 
-# Hugin toolchain, ExifTool for metadata transfer, LibRaw for RAW decoding.
+# Hugin toolchain, ExifTool for metadata transfer, LibRaw for RAW decoding and
+# libheif for HEIC, which is what an iPhone shoots by default.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         hugin-tools \
         enblend \
         libimage-exiftool-perl \
         libraw-bin \
+        libheif-examples \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/hugin-stitch-gui /usr/local/bin/hugin-stitch-gui
