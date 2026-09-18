@@ -375,3 +375,46 @@ project; the binaries themselves keep their own licenses.
 
 This is a local tool. It binds to `127.0.0.1` and has no authentication, so don't expose it to a
 network you don't control.
+
+## Credits
+
+This app is a web front end and little else. Everything that decides how the
+panorama looks belongs to other people's work:
+
+**Stitching**
+
+- [Hugin](https://hugin.sourceforge.io/)
+  ([source](https://sourceforge.net/p/hugin/hugin/ci/default/tree/)) provides
+  `pto_gen`, `cpfind`, `autooptimiser`, `pano_modify`, `hugin_executor`, `nona`,
+  `celeste_standalone` and `cpclean`. Every alignment decision here is a Hugin
+  command line, including the levelling and exposure solving.
+- [Enblend](https://enblend.sourceforge.net/)
+  ([source](https://sourceforge.net/p/enblend/code/ci/default/tree/)) does the
+  multi-resolution blending that makes the seams disappear, and the OpenCL path
+  that makes it quick.
+- [Panorama Tools](https://sourceforge.net/projects/panotools/) (libpano13) is
+  the projection and remapping library underneath `nona`.
+
+**Reading files and keeping their metadata**
+
+- [LibRaw](https://www.libraw.org/) ([repo](https://github.com/LibRaw/LibRaw))
+  supplies `dcraw_emu`, the first choice for RAW.
+- [dcraw](https://dechifro.org/dcraw/), Dave Coffin's original RAW decoder,
+  is the next one tried.
+- [darktable](https://www.darktable.org/)
+  ([repo](https://github.com/darktable-org/darktable)) supplies
+  `darktable-cli`, the last RAW fallback.
+- [ExifTool](https://exiftool.org/)
+  ([repo](https://github.com/exiftool/exiftool)), Phil Harvey's metadata tool,
+  copies the capture time and camera details into the finished panorama.
+
+**This binary**
+
+- [Go](https://go.dev/) ([repo](https://github.com/golang/go)) and its standard
+  library: the HTTP server, the streaming multipart upload, and JPEG and PNG
+  encoding are all stdlib.
+- [golang.org/x/image](https://pkg.go.dev/golang.org/x/image)
+  ([repo](https://github.com/golang/image)) adds TIFF, BMP and WebP. It is the
+  only external Go dependency.
+- The UI is plain HTML, CSS and JavaScript, with no frameworks and no web fonts,
+  so a running instance fetches nothing from anyone.
