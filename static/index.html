@@ -55,6 +55,45 @@
         </label>
       </div>
       <p class="hint" id="format-hint"></p>
+      <label class="check" for="level">
+        <input type="checkbox" id="level" checked>
+        <span>
+          <span class="check-label">Level the horizon</span>
+          <span class="hint">Rotates the panorama so the horizon sits flat. Also stops a level
+            horizon rendering as a curve in cylindrical and equirectangular output.</span>
+        </span>
+      </label>
+      <label class="check" for="photometric">
+        <input type="checkbox" id="photometric" checked>
+        <span>
+          <span class="check-label">Match exposure and vignetting</span>
+          <span class="hint">Solves the true brightness difference between frames from their
+            overlaps instead of trusting EXIF, and corrects lens vignetting. Evens out
+            brightness stepping across large areas like sky and water.</span>
+        </span>
+      </label>
+
+      <details class="tune">
+        <summary>Fine-tune rotation</summary>
+        <p class="hint">Applied on top of the automatic orientation, in degrees. Use these when
+          levelling lands close but not quite, or when the scene has no horizon to level against.
+          Changing them needs another stitch to see the result.</p>
+        <div class="tune-row">
+          <label class="opt" for="roll">
+            <span class="opt-label">Roll <span class="hint-inline">tilt</span></span>
+            <input type="number" id="roll" class="angle" value="0" step="0.5" min="-180" max="180">
+          </label>
+          <label class="opt" for="pitch">
+            <span class="opt-label">Pitch <span class="hint-inline">up / down</span></span>
+            <input type="number" id="pitch" class="angle" value="0" step="0.5" min="-180" max="180">
+          </label>
+          <label class="opt" for="yaw">
+            <span class="opt-label">Yaw <span class="hint-inline">recentre</span></span>
+            <input type="number" id="yaw" class="angle" value="0" step="0.5" min="-180" max="180">
+          </label>
+          <button type="button" id="reset-tune" class="ghost">Reset</button>
+        </div>
+      </details>
       <div class="actions">
         <label class="proj-label" for="projection">Projection</label>
         <select id="projection" class="proj-select" title="Choose the output projection, or let the app pick based on the measured field of view">

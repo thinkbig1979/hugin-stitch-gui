@@ -1,9 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-env/
+# Compiled binary
+/hugin-stitch-gui
+/hugin-stitch-gui.exe
+/dist/
+
+# Go test and coverage output
+*.test
+*.out
 
 # Local job scratch / outputs
 *.tif

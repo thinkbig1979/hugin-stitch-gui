@@ -1,25 +1,32 @@
-FROM python:3.12-slim
+# Build the server. CGO is off, so the binary is static and the runtime stage
+# needs no Go toolchain and no C libraries.
+FROM golang:1.24-bookworm AS build
 
-# Hugin toolchain + ExifTool for metadata transfer
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY *.go ./
+COPY static ./static
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/hugin-stitch-gui .
+
+FROM debian:bookworm-slim
+
+# Hugin toolchain, ExifTool for metadata transfer, LibRaw for RAW decoding.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         hugin-tools \
         enblend \
         libimage-exiftool-perl \
+        libraw-bin \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+COPY --from=build /out/hugin-stitch-gui /usr/local/bin/hugin-stitch-gui
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app.py .
-COPY static ./static
-
+# The UI is embedded in the binary, so nothing else needs to be copied.
 ENV HOST=0.0.0.0
 ENV PORT=8765
 
 EXPOSE 8765
 
-VOLUME /tmp/hugin-stitch-jobs
-
-CMD ["sh", "-c", "python app.py ${PORT:-8765}"]
+ENTRYPOINT ["hugin-stitch-gui"]

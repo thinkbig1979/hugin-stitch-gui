@@ -3,10 +3,16 @@
 .dockerignore
 Dockerfile
 README.md
-__pycache__/
-.venv/
-venv/
-env/
+LICENSE
+
+# Build output and local scratch
+/hugin-stitch-gui
+/hugin-stitch-gui.exe
+/dist/
+*.test
 *.tif
 *.tiff
 *.pto
+
+# The screenshot is documentation, not part of the binary
+static/screenshot.png

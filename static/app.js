@@ -14,6 +14,12 @@ const qualityWrap = document.getElementById("quality-wrap");
 const qualityInput = document.getElementById("quality");
 const qualityValue = document.getElementById("quality-value");
 const outputNameInput = document.getElementById("output-name");
+const levelInput = document.getElementById("level");
+const photometricInput = document.getElementById("photometric");
+const rollInput = document.getElementById("roll");
+const pitchInput = document.getElementById("pitch");
+const yawInput = document.getElementById("yaw");
+const resetTuneBtn = document.getElementById("reset-tune");
 const progressWrap = document.getElementById("progress-wrap");
 const progressFill = document.getElementById("progress-fill");
 const progressMsg = document.getElementById("progress-msg");
@@ -180,6 +186,11 @@ stitchBtn.addEventListener("click", async () => {
     form.append("quality", String(qualityInput.value));
   }
   form.append("filename", outputNameInput.value.trim());
+  form.append("level", levelInput.checked ? "1" : "0");
+  form.append("photometric", photometricInput.checked ? "1" : "0");
+  form.append("roll", rollInput.value || "0");
+  form.append("pitch", pitchInput.value || "0");
+  form.append("yaw", yawInput.value || "0");
 
   let jobId;
   try {
@@ -238,6 +249,12 @@ function finishWithError(msg) {
   refreshQueue();
   setTimeout(() => progressMsg.classList.remove("error"), 6000);
 }
+
+resetTuneBtn.addEventListener("click", () => {
+  rollInput.value = "0";
+  pitchInput.value = "0";
+  yawInput.value = "0";
+});
 
 function updateProjHint() {
   projHint.textContent = PROJ_HINTS[projectionSelect.value] || "";
