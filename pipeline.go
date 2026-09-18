@@ -154,7 +154,7 @@ func (p *Pipeline) Run(ctx context.Context, job *Job, uploaded []string) {
 
 	var dateTime string
 	if format.EXIF {
-		dateTime = copyEXIF(ctx, uploaded[0], output, job)
+		dateTime = copyEXIF(ctx, p.tools, uploaded[0], output, job)
 	}
 
 	downloadName := makeDownloadName(uploaded[0], dateTime, format.Ext)
@@ -279,7 +279,7 @@ func (p *Pipeline) prepareSources(ctx context.Context, job *Job, uploaded []stri
 			round4(phases[0].end*float64(i+1)/float64(len(uploaded))),
 			fmt.Sprintf("Preparing images (%d/%d)...", i+1, len(uploaded)),
 		)
-		ready, err := prepareSource(src, job.Dir, p.tools.RawConverter)
+		ready, err := prepareSource(src, job.Dir, p.tools)
 		if err != nil {
 			unreadable = append(unreadable, filepath.Base(src)+": "+err.Error())
 			continue
@@ -297,8 +297,8 @@ func (p *Pipeline) runTool(ctx context.Context, job *Job, phaseIndex int, name s
 	ph := phases[phaseIndex]
 	job.setProgress(ph.start, ph.message)
 
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd := exec.CommandContext(ctx, p.tools.Path(name), args...)
+	cmd.Env = p.tools.Env()
 	useProcessGroup(cmd)
 	// Without a delay, Wait blocks on the output pipe until every process
 	// holding it has gone, which a killed tool's children may not do promptly.

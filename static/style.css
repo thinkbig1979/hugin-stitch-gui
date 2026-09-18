@@ -166,6 +166,27 @@ section { margin-top: 32px; }
 .check > span { display: flex; flex-direction: column; gap: 2px; }
 .check .check-label { font-size: .92rem; }
 .check .hint { margin: 0; max-width: 62ch; }
+.setup {
+  margin-bottom: 22px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 12px;
+}
+.setup h2 { margin: 0 0 6px; font-size: 1.02rem; }
+.setup-missing { margin: 0 0 10px; color: var(--muted); font-size: .88rem; }
+.setup-platform { margin: 0 0 6px; font-size: .92rem; }
+.setup ul { margin: 0 0 10px; padding-left: 18px; }
+.setup li { margin: 3px 0; font-size: .9rem; }
+.setup code,
+.setup li code {
+  padding: 1px 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: .86em;
+}
+.setup a { color: var(--accent); }
 .progress-foot {
   display: flex;
   align-items: center;

@@ -24,6 +24,11 @@ const progressWrap = document.getElementById("progress-wrap");
 const progressFill = document.getElementById("progress-fill");
 const progressMsg = document.getElementById("progress-msg");
 const cancelBtn = document.getElementById("cancel-btn");
+const setupBanner = document.getElementById("setup");
+const setupMissing = document.getElementById("setup-missing");
+const setupPlatform = document.getElementById("setup-platform");
+const setupSteps = document.getElementById("setup-steps");
+const setupLink = document.getElementById("setup-link");
 const resultWrap = document.getElementById("result-wrap");
 const resultImg = document.getElementById("result-img");
 const downloadLink = document.getElementById("download-link");
@@ -308,6 +313,49 @@ resetTuneBtn.addEventListener("click", () => {
   yawInput.value = "0";
 });
 
+// Ask the server what it found on startup, so a machine without the Hugin
+// tools says so when the page opens rather than after a failed stitch.
+async function checkToolchain() {
+  let health;
+  try {
+    const res = await fetch("/health", { method: "POST" });
+    health = await res.json();
+  } catch (err) {
+    return; // the server is the thing that is unreachable; nothing to advise
+  }
+  if (!health || health.engine_ready) {
+    hide(setupBanner);
+    return;
+  }
+
+  const missing = health.missing || [];
+  setupMissing.textContent = missing.length
+    ? `Missing: ${missing.join(", ")}`
+    : "The Hugin command-line tools could not be found.";
+
+  const install = health.install || {};
+  setupPlatform.textContent = install.platform
+    ? `To install on ${install.platform}:`
+    : "To install:";
+
+  setupSteps.replaceChildren();
+  for (const step of install.steps || []) {
+    const li = document.createElement("li");
+    // A step that is a command reads better as one.
+    if (/^(brew|sudo|winget|choco)\s/.test(step) || step.includes(":  ")) {
+      const code = document.createElement("code");
+      code.textContent = step;
+      li.appendChild(code);
+    } else {
+      li.textContent = step;
+    }
+    setupSteps.appendChild(li);
+  }
+  if (install.url) setupLink.href = install.url;
+
+  show(setupBanner);
+}
+
 function updateProjHint() {
   projHint.textContent = PROJ_HINTS[projectionSelect.value] || "";
 }
@@ -319,3 +367,4 @@ qualityInput.addEventListener("input", () => {
   qualityValue.textContent = qualityInput.value;
 });
 updateFormatControls();
+checkToolchain();

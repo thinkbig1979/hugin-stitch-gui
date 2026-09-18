@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -42,6 +43,7 @@ func run() error {
 		hostFlag   = flag.String("host", "", "address to bind (default 127.0.0.1, or $HOST)")
 		portFlag   = flag.Int("port", 0, "port to listen on (default 8765, or $PORT)")
 		staticFlag = flag.String("static", "", "serve the UI from this directory instead of the embedded copy")
+		huginFlag  = flag.String("hugin-dir", "", "directory holding the Hugin tools, if they are somewhere unusual (or $HUGIN_DIR)")
 	)
 	flag.Usage = usage
 	flag.Parse()
@@ -55,15 +57,8 @@ func run() error {
 		host = envOr("HOST", "127.0.0.1")
 	}
 
-	tools := DetectToolchain()
-	if !tools.Ready {
-		fmt.Fprintln(os.Stderr, "WARNING: Hugin CLI tools missing:", strings.Join(tools.Missing, ", "))
-		fmt.Fprintln(os.Stderr, "Install with: sudo apt install hugin-tools enblend")
-	}
-	if tools.RawConverter == "" {
-		fmt.Fprintln(os.Stderr, "Note: no RAW decoder found; CR2/CR3/NEF/ARW/DNG uploads will be skipped.")
-		fmt.Fprintln(os.Stderr, "Install one with: sudo apt install libraw-bin")
-	}
+	tools := DetectToolchain(huginDirs(*huginFlag)...)
+	reportToolchain(tools)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -130,6 +125,41 @@ func resolvePort(flagValue int, args []string) (int, error) {
 		return port, nil
 	}
 	return defaultPort, nil
+}
+
+// huginDirs returns the directories named by the -hugin-dir flag or the
+// HUGIN_DIR environment variable. Several can be given, separated the way the
+// platform separates PATH entries.
+func huginDirs(flagValue string) []string {
+	value := flagValue
+	if value == "" {
+		value = os.Getenv("HUGIN_DIR")
+	}
+	if value == "" {
+		return nil
+	}
+	var dirs []string
+	for _, dir := range filepath.SplitList(value) {
+		if dir = strings.TrimSpace(dir); dir != "" {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
+
+// reportToolchain prints what was found and, when something is missing, how to
+// install it on this platform.
+func reportToolchain(tools Toolchain) {
+	if !tools.Ready {
+		fmt.Fprintln(os.Stderr, "WARNING: "+tools.MissingMessage())
+		fmt.Fprintln(os.Stderr, "If Hugin is installed somewhere unusual, point at it with -hugin-dir.")
+	}
+	if tools.RawConverter == "" {
+		fmt.Fprintln(os.Stderr, "Note: no RAW decoder found, so CR2/CR3/NEF/ARW/DNG uploads will be skipped.")
+	}
+	if !tools.Has("exiftool") {
+		fmt.Fprintln(os.Stderr, "Note: exiftool not found, so panoramas will not keep their capture time.")
+	}
 }
 
 func envOr(key, fallback string) string {

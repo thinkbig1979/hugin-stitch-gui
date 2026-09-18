@@ -13,6 +13,18 @@
       <p class="sub">Drop your photos to stitch them into a panorama via Hugin</p>
     </header>
 
+    <section id="setup" class="setup hidden" role="alert">
+      <h2 id="setup-title">Hugin is not installed</h2>
+      <p id="setup-missing" class="setup-missing"></p>
+      <p id="setup-platform" class="setup-platform"></p>
+      <ul id="setup-steps"></ul>
+      <p class="hint">
+        Already installed it somewhere unusual? Start the app with
+        <code>-hugin-dir /path/to/hugin/bin</code>.
+        <a id="setup-link" href="https://hugin.sourceforge.io/download/" target="_blank" rel="noreferrer noopener">Downloads</a>
+      </p>
+    </section>
+
     <section id="drop-zone" tabindex="0" role="button" aria-label="Drop zone">
       <input type="file" id="file-input" accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.heic" multiple hidden>
       <div class="dz-inner">

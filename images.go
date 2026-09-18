@@ -101,16 +101,6 @@ var rawConverters = []rawConverter{
 	},
 }
 
-// detectRawConverter returns the first RAW decoder available on PATH.
-func detectRawConverter() (rawConverter, bool) {
-	for _, conv := range rawConverters {
-		if have(conv.name) {
-			return conv, true
-		}
-	}
-	return rawConverter{}, false
-}
-
 // ErrNoRawConverter is reported when a RAW file is uploaded to a machine with
 // no decoder installed.
 var ErrNoRawConverter = errors.New(
@@ -118,19 +108,23 @@ var ErrNoRawConverter = errors.New(
 
 // prepareSource passes normal images straight through and demosaics RAW files
 // into a TIFF that Hugin can read. It returns the path to use as a stitch input.
-func prepareSource(path, dir, converterName string) (string, error) {
+//
+// tools supplies the decoder: its name selects the command line to build, and
+// its resolved location is what actually gets run, since a decoder installed
+// alongside Hugin may not be on PATH.
+func prepareSource(path, dir string, tools Toolchain) (string, error) {
 	if !rawExts[strings.ToLower(filepath.Ext(path))] {
 		return path, nil
 	}
-	conv, ok := rawConverterByName(converterName)
+	conv, ok := rawConverterByName(tools.RawConverter)
 	if !ok {
 		return "", ErrNoRawConverter
 	}
 
 	base := filepath.Base(path)
 	dst := filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+"_raw.tif")
-	cmd := exec.Command(conv.name, conv.args(path, dst)...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd := exec.Command(tools.Path(conv.name), conv.args(path, dst)...)
+	cmd.Env = tools.Env()
 
 	if conv.stdout {
 		out, err := os.Create(dst)

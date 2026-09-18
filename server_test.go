@@ -367,14 +367,14 @@ func TestMakePreviewRejectsUndecodableInput(t *testing.T) {
 
 // prepareSource passes non-RAW files through untouched.
 func TestPrepareSourcePassesThroughNormalImages(t *testing.T) {
-	got, err := prepareSource("/tmp/job/a.jpg", "/tmp/job", "")
+	got, err := prepareSource("/tmp/job/a.jpg", "/tmp/job", Toolchain{})
 	if err != nil || got != "/tmp/job/a.jpg" {
 		t.Errorf("prepareSource = %q, %v; want the path unchanged", got, err)
 	}
 }
 
 func TestPrepareSourceNeedsAConverterForRAW(t *testing.T) {
-	_, err := prepareSource("/tmp/job/IMG.CR2", "/tmp/job", "")
+	_, err := prepareSource("/tmp/job/IMG.CR2", "/tmp/job", Toolchain{})
 	if err == nil {
 		t.Fatal("expected an error when no RAW converter is configured")
 	}

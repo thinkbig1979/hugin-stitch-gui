@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -20,17 +19,17 @@ import (
 //     mandatory structural tags and deleting them corrupts the file.
 //
 // Returns the DateTimeOriginal value if present, else "".
-func copyEXIF(ctx context.Context, src, dst string, job *Job) string {
-	exifTool, err := exec.LookPath("exiftool")
-	if err != nil {
-		job.pushLine("exiftool not installed - skipping EXIF transfer " +
-			"(sudo apt install libimage-exiftool-perl)")
+func copyEXIF(ctx context.Context, tools Toolchain, src, dst string, job *Job) string {
+	if !tools.Has("exiftool") {
+		job.pushLine("exiftool not installed - skipping EXIF transfer. " +
+			"Install it to keep the capture time and camera details.")
 		return ""
 	}
+	exifTool := tools.Path("exiftool")
 
 	run := func(args ...string) error {
 		cmd := exec.CommandContext(ctx, exifTool, args...)
-		cmd.Env = append(os.Environ(), "LC_ALL=C")
+		cmd.Env = tools.Env()
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			job.pushLine("exiftool transfer failed: " + firstLine(string(output), err))
@@ -47,7 +46,7 @@ func copyEXIF(ctx context.Context, src, dst string, job *Job) string {
 	}
 
 	cmd := exec.CommandContext(ctx, exifTool, "-s", "-s", "-s", "-DateTimeOriginal", dst)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.Env = tools.Env()
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

@@ -42,38 +42,79 @@ is done by the Hugin binaries already installed on the system.
   stitched panorama (via `exiftool` when installed), and uses it to name the
   download file
 - Uploads stream straight to disk, so a multi-gigabyte drop never has to fit in memory
+- Finds the Hugin tools wherever the platform's installer put them, without
+  needing them on `PATH`, and says what to install when they are missing
 
 ## Requirements
 
-Hugin's CLI tools must be on `PATH`:
+Hugin does the stitching, so its command-line tools have to be on the machine:
 
 ```
 pto_gen  cpfind  autooptimiser  pano_modify  hugin_executor  nona  enblend
 ```
 
-On Debian/Ubuntu:
+You do not have to put them on `PATH`. On startup the app looks on `PATH` and
+then in the places each platform's installer actually uses, because installing
+Hugin normally does not make its tools reachable from a shell: on macOS they
+live inside the application bundle, and the Windows installer does not amend
+`PATH`. The directories it found the tools in are handed down to the tools
+themselves, since `hugin_executor` launches `nona` and `enblend` by name and
+searches `PATH` on its own account.
+
+If the tools are missing, the app says so when the page opens, naming what is
+missing and how to install it on the system it is running on, rather than
+waiting for a stitch to fail.
+
+**macOS**
 
 ```bash
-sudo apt install hugin-tools enblend
+brew install --cask hugin          # or the disk image from the link below
+brew install libraw exiftool       # optional: RAW decoding and metadata
 ```
 
-Optional tools that improve the result when present:
+**Windows**
 
-- `exiftool` copies the original EXIF date/time and metadata into the stitched
-  panorama so the result keeps its capture timestamp. Without it the stitch
-  still works, just without the metadata transfer.
-  (`sudo apt install libimage-exiftool-perl`)
-- `cpclean` and `celeste_standalone` (both from `hugin-tools`) clean up
-  unreliable control points before alignment. `celeste` removes matches found in
-  cloud; `cpclean` removes those whose alignment error is a statistical outlier.
-  Without them the stitch still works, just from noisier control points.
+Run the Hugin `.msi` installer. An install under `Program Files` is found
+automatically. For RAW files and metadata, install LibRaw and ExifTool.
+
+**Linux**
+
+```bash
+sudo apt install hugin-tools enblend libimage-exiftool-perl libraw-bin   # Debian/Ubuntu
+sudo dnf install hugin enblend perl-Image-ExifTool LibRaw-tools          # Fedora
+sudo pacman -S hugin enblend-enfuse perl-image-exiftool libraw           # Arch
+```
+
+Downloads for every platform: <https://hugin.sourceforge.io/download/>
+
+If Hugin lives somewhere unusual, point at it directly:
+
+```bash
+./hugin-stitch-gui -hugin-dir /opt/hugin/bin
+HUGIN_DIR=/opt/hugin/bin ./hugin-stitch-gui
+```
+
+Several directories can be listed, separated the way your platform separates
+`PATH` entries. `/health` reports what was found and which directories were
+searched.
+
+### Optional tools
+
+None of these are required; each one is skipped cleanly when absent.
+
+- `exiftool` copies the capture time and camera details into the finished
+  panorama, and names the download after the original shot.
+- `cpclean` and `celeste_standalone` (both ship with `hugin-tools`) discard
+  unreliable control points before alignment. `celeste` removes matches found
+  in cloud, `cpclean` those whose alignment error is a statistical outlier.
 - A RAW decoder is needed for CR2/CR3/NEF/ARW/DNG uploads. The app uses the
-  first of `dcraw_emu` (from LibRaw), `dcraw`, or `darktable-cli` that it finds
-  on `PATH`, and reports which one at startup and on `/health`. Without one,
-  RAW files are skipped with an explanatory message; every other format is
-  unaffected. (`sudo apt install libraw-bin`)
+  first of `dcraw_emu` (from LibRaw), `dcraw` or `darktable-cli` it finds.
+  Without one, RAW files are skipped and every other format is unaffected.
 
-There are no build-time dependencies beyond the Go toolchain.
+The only build-time dependency is the Go toolchain.
+
+Or skip all of it and use the container, which has everything already: see
+[Running with Docker](#running-with-docker).
 
 ## Building
 
@@ -104,8 +145,9 @@ lands on.
 Open the URL, drop images in, click **Stitch panorama**.
 
 `HOST` and `PORT` environment variables are honoured when the matching flag is
-not given. `-static <dir>` serves the UI from a directory instead of the
-embedded copy, which is convenient while editing the frontend.
+not given. `-hugin-dir <dir>` (or `HUGIN_DIR`) points at a Hugin install the
+app did not find on its own. `-static <dir>` serves the UI from a directory
+instead of the embedded copy, which is convenient while editing the frontend.
 
 ## Testing
 
@@ -193,7 +235,7 @@ that was otherwise left at zero. It costs about a second.
 | POST   | `/cancel/<id>`   | Stop a running stitch; 409 if it already finished |
 | GET    | `/result/<id>`   | PNG preview of the finished panorama         |
 | GET    | `/download/<id>` | Stitched panorama in the chosen format (TIFF, PNG, JPEG, HDR TIFF, or EXR); `?name=` overrides the filename |
-| GET    | `/health`        | Toolchain availability report (POST also accepted) |
+| GET    | `/health`        | Toolchain report: what was found, what is missing, where it looked, and how to install the rest on this platform (POST also accepted) |
 
 `level` and `photometric` accept `0`/`false`/`off`/`no` to disable that
 correction; any other value, including omitting the field, leaves it on.
@@ -226,7 +268,7 @@ exif.go             metadata transfer via ExifTool
 naming.go           filename sanitising for uploads and downloads
 proc_unix.go        process-group teardown so cancelling kills the tool tree
 proc_windows.go     the Windows no-op equivalent
-toolchain.go        PATH probing for the Hugin and optional tools
+toolchain.go        finding the Hugin tools, and per-platform install advice
 *_test.go           unit tests for the pipeline, parsing and HTTP surface
 Dockerfile          container image with the full toolchain
 static/index.html   UI markup
