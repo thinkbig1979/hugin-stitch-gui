@@ -1,0 +1,60 @@
+# Tag a commit and the binaries build themselves:
+#
+#     git tag -a v0.2.0 -m "..." && git push origin v0.2.0
+#
+# CGO is off, so one Linux runner cross-compiles every target and no build
+# matrix is needed. The UI is embedded with go:embed, so each artefact is a
+# single self-contained file.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The metadata tests shell out to the real ExifTool and skip without it,
+      # so install it here rather than let a release go out on tests that
+      # quietly did not run. Hugin itself is not installed: the stitch tests
+      # use fakes, and a real stitch would need a far heavier runner.
+      - name: Install ExifTool
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+
+      - run: go vet ./...
+      - run: go test ./...
+
+      - name: Build every target
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"; ext=""
+            [ "$os" = windows ] && ext=".exe"
+            GOOS="$os" GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "dist/hugin-stitch-gui-${os}-${arch}${ext}" .
+          done
+          # Name the binaries explicitly: a bare glob would pick up
+          # checksums.txt itself on any re-run, and the plain names let a
+          # user verify with "sha256sum -c checksums.txt".
+          cd dist && sha256sum hugin-stitch-gui-* > checksums.txt
+          ls -l
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -30,6 +30,11 @@ import (
 
 const defaultPort = 8765
 
+// version is what this build calls itself. Releases stamp it with the tag they
+// were built from, via -ldflags "-X main.version=v1.2.3"; anything built
+// straight from a checkout stays "dev".
+var version = "dev"
+
 func main() {
 	log.SetFlags(0)
 	if err := run(); err != nil {
@@ -40,14 +45,20 @@ func main() {
 
 func run() error {
 	var (
-		hostFlag   = flag.String("host", "", "address to bind (default 127.0.0.1, or $HOST)")
-		portFlag   = flag.Int("port", 0, "port to listen on (default 8765, or $PORT)")
-		staticFlag = flag.String("static", "", "serve the UI from this directory instead of the embedded copy")
-		huginFlag  = flag.String("hugin-dir", "", "directory holding the Hugin tools, if they are somewhere unusual (or $HUGIN_DIR)")
-		keepFlag   = flag.Duration("retention", 0, "how long to keep a finished stitch after the last time the page asked for it, e.g. 30m (default 2h, or $RETENTION; 0s keeps them until the server stops)")
+		hostFlag    = flag.String("host", "", "address to bind (default 127.0.0.1, or $HOST)")
+		portFlag    = flag.Int("port", 0, "port to listen on (default 8765, or $PORT)")
+		staticFlag  = flag.String("static", "", "serve the UI from this directory instead of the embedded copy")
+		huginFlag   = flag.String("hugin-dir", "", "directory holding the Hugin tools, if they are somewhere unusual (or $HUGIN_DIR)")
+		keepFlag    = flag.Duration("retention", 0, "how long to keep a finished stitch after the last time the page asked for it, e.g. 30m (default 2h, or $RETENTION; 0s keeps them until the server stops)")
+		versionFlag = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Usage = usage
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println("hugin-stitch-gui " + version)
+		return nil
+	}
 
 	port, err := resolvePort(*portFlag, flag.Args())
 	if err != nil {
@@ -224,6 +235,7 @@ func usage() {
 	out := flag.CommandLine.Output()
 	fmt.Fprintf(out, "Usage: %s [flags] [port]\n\n", os.Args[0])
 	fmt.Fprintln(out, "A local web UI for stitching panoramas with the Hugin command-line tools.")
+	fmt.Fprintln(out, "Version "+version+".")
 	fmt.Fprintln(out, "\nFlags:")
 	flag.PrintDefaults()
 }
